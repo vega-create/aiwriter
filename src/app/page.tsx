@@ -344,15 +344,29 @@ export default function Home() {
     const h2Pattern = /^## [一二三四五六七八九十]/gm;
     const h2Matches = Array.from(content.matchAll(h2Pattern));
     const imagePositions = ['image1', 'image2', 'image3'];
-
-    for (let idx = 0; idx < Math.min(h2Matches.length, 3); idx++) {
+    // 倒序插入避免索引偏移，圖片放在每個 H2 段落的第一個段落後
+    for (let idx = Math.min(h2Matches.length, 3) - 1; idx >= 0; idx--) {
       const pos = imagePositions[idx];
       const imgData = article.images?.[pos]?.selected;
       if (!imgData?.url) continue;
 
       const imgMarkdown = `\n\n![${imgData.alt}](${imgData.url})\n`;
-      const endIdx = h2Matches[idx + 1]?.index || content.length;
-      content = content.slice(0, endIdx) + imgMarkdown + content.slice(endIdx);
+      const sectionStart = h2Matches[idx].index! + h2Matches[idx][0].length;
+      const sectionEnd = h2Matches[idx + 1]?.index || content.length;
+      const section = content.slice(sectionStart, sectionEnd);
+
+      // 找第一個雙換行（第一段結束處）
+      const firstBreak = section.indexOf('\n\n');
+      if (firstBreak !== -1) {
+        // 找第二個雙換行（第一個段落文字結束後）
+        const secondBreak = section.indexOf('\n\n', firstBreak + 2);
+        const insertAt = secondBreak !== -1
+          ? sectionStart + secondBreak
+          : sectionStart + firstBreak;
+        content = content.slice(0, insertAt) + imgMarkdown + content.slice(insertAt);
+      } else {
+        content = content.slice(0, sectionEnd) + imgMarkdown + content.slice(sectionEnd);
+      }
     }
 
     const faqYaml = article.faq
