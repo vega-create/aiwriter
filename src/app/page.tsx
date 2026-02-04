@@ -46,6 +46,7 @@ interface Article {
   content: string;
   category: string;
   slug: string;
+  scheduledDate: string;
   faq: Array<{ q: string; a: string }>;
   imageKeywords: Record<string, string>;
   images: ArticleImages;
@@ -137,6 +138,14 @@ export default function Home() {
 
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, title: '' });
   const [batchRunning, setBatchRunning] = useState(false);
+
+  // 排程發布
+  const [scheduleStart, setScheduleStart] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  });
+  const [scheduleInterval, setScheduleInterval] = useState(2);
 
   const [imageModal, setImageModal] = useState<{ articleIndex: number; position: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -303,11 +312,17 @@ export default function Home() {
 
         const data = await res.json();
         if (res.ok) {
+          // 計算排程日期
+          const startDate = new Date(scheduleStart);
+          startDate.setDate(startDate.getDate() + i * scheduleInterval);
+          const dateStr = startDate.toISOString().split('T')[0];
+
           newArticles.push({
             title,
             content: data.content,
             category,
             slug: generateSlug(title),
+            scheduledDate: dateStr,
             faq: data.faq || [],
             imageKeywords: data.imageKeywords || {},
             images: data.images || {},
@@ -335,7 +350,7 @@ export default function Home() {
   }
 
   function generateMarkdown(article: Article): string {
-    const date = new Date().toISOString().split('T')[0];
+    const date = article.scheduledDate || new Date().toISOString().split('T')[0];
     const coverImage = article.images?.cover?.selected?.url || '';
     const coverAlt = article.images?.cover?.selected?.alt || article.title;
 
@@ -344,29 +359,15 @@ export default function Home() {
     const h2Pattern = /^## [一二三四五六七八九十]/gm;
     const h2Matches = Array.from(content.matchAll(h2Pattern));
     const imagePositions = ['image1', 'image2', 'image3'];
-    // 倒序插入避免索引偏移，圖片放在每個 H2 段落的第一個段落後
-    for (let idx = Math.min(h2Matches.length, 3) - 1; idx >= 0; idx--) {
+
+    for (let idx = 0; idx < Math.min(h2Matches.length, 3); idx++) {
       const pos = imagePositions[idx];
       const imgData = article.images?.[pos]?.selected;
       if (!imgData?.url) continue;
 
       const imgMarkdown = `\n\n![${imgData.alt}](${imgData.url})\n`;
-      const sectionStart = h2Matches[idx].index! + h2Matches[idx][0].length;
-      const sectionEnd = h2Matches[idx + 1]?.index || content.length;
-      const section = content.slice(sectionStart, sectionEnd);
-
-      // 找第一個雙換行（第一段結束處）
-      const firstBreak = section.indexOf('\n\n');
-      if (firstBreak !== -1) {
-        // 找第二個雙換行（第一個段落文字結束後）
-        const secondBreak = section.indexOf('\n\n', firstBreak + 2);
-        const insertAt = secondBreak !== -1
-          ? sectionStart + secondBreak
-          : sectionStart + firstBreak;
-        content = content.slice(0, insertAt) + imgMarkdown + content.slice(insertAt);
-      } else {
-        content = content.slice(0, sectionEnd) + imgMarkdown + content.slice(sectionEnd);
-      }
+      const endIdx = h2Matches[idx + 1]?.index || content.length;
+      content = content.slice(0, endIdx) + imgMarkdown + content.slice(endIdx);
     }
 
     const faqYaml = article.faq
@@ -705,6 +706,37 @@ ${content}`;
                     <input type="number" value={batchDelay} onChange={(e) => setBatchDelay(Number(e.target.value))} min={10} />
                   </div>
                 </div>
+
+                {/* 排程發布設定 */}
+                <div className="schedule-box">
+                  <h4>📅 排程發布</h4>
+                  <p className="schedule-desc">文章會自動分配未來日期，搭配每日自動部署，實現定時上線。</p>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>開始日期</label>
+                      <input type="date" value={scheduleStart} onChange={(e) => setScheduleStart(e.target.value)} />
+                    </div>
+                    <div className="form-group">
+                      <label>每隔幾天發一篇</label>
+                      <select value={scheduleInterval} onChange={(e) => setScheduleInterval(Number(e.target.value))}>
+                        <option value={1}>每天 1 篇</option>
+                        <option value={2}>每 2 天 1 篇</option>
+                        <option value={3}>每 3 天 1 篇</option>
+                        <option value={7}>每週 1 篇</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="schedule-preview">
+                    <strong>排程預覽：</strong>
+                    {(() => {
+                      const count = titles.length;
+                      const start = new Date(scheduleStart);
+                      const end = new Date(scheduleStart);
+                      end.setDate(end.getDate() + (count - 1) * scheduleInterval);
+                      return ` ${count} 篇，${start.toLocaleDateString('zh-TW')} ~ ${end.toLocaleDateString('zh-TW')}`;
+                    })()}
+                  </div>
+                </div>
                 <div className="btn-group">
                   <button className="btn btn-secondary" onClick={() => { setTitles([]); setStep(2); }}>← 上一步</button>
                   <button className="btn btn-primary" onClick={startBatchGenerate}>📄 開始產生文章</button>
@@ -741,7 +773,11 @@ ${content}`;
 
               return (
                 <div className="card" key={articleIdx}>
-                  <h3 style={{ fontSize: 18, marginBottom: 15 }}>📄 {article.title}</h3>
+                  <h3 style={{ fontSize: 18, marginBottom: 8 }}>📄 {article.title}</h3>
+                  <div style={{ fontSize: 13, color: 'var(--text-light)', marginBottom: 15 }}>
+                    📅 排程：<strong style={{ color: 'var(--primary-dark)' }}>{article.scheduledDate}</strong>
+                    &nbsp;&nbsp;|&nbsp;&nbsp;📁 {article.category}
+                  </div>
 
                   {/* 圖片區 */}
                   <div className="image-grid">

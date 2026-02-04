@@ -1,0 +1,19 @@
+# 放到 bible_tw repo 的 .github/workflows/daily-deploy.yml
+# 每天自動部署，讓排程文章準時上線
+
+name: Daily Deploy
+
+on:
+  schedule:
+    # 每天台灣時間早上 6:00（UTC 22:00）
+    - cron: '0 22 * * *'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Vercel Deploy
+        run: |
+          curl -X POST "${{ secrets.VERCEL_DEPLOY_HOOK }}"
+          echo "✅ Deploy triggered at $(date)"
