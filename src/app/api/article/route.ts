@@ -7,6 +7,18 @@ const openai = new OpenAI({
 
 const PEXELS_API_KEY = process.env.PEXELS_API_KEY;
 
+// 台灣常見名字列表（每次隨機選一個）
+const TW_NAMES = [
+  '志豪', '怡君', '建宏', '淑芬', '俊傑', '雅琪', '宗翰', '佳穎',
+  '柏翰', '詩涵', '冠廷', '欣怡', '家豪', '雅雯', '承恩', '筱婷',
+  '宏仁', '美玲', '彥廷', '思妤', '育誠', '佩珊', '哲瑋', '曉萱',
+  '信宏', '惠婷', '威廷', '雅芳', '嘉豪', '靜宜',
+];
+
+function getRandomName(): string {
+  return TW_NAMES[Math.floor(Math.random() * TW_NAMES.length)];
+}
+
 // 搜 Pexels 圖片，一次拿 20 張候選
 async function searchPexelsImages(query: string) {
   const empty = {
@@ -48,6 +60,9 @@ export async function POST(request: NextRequest) {
   try {
     const { title, category, length, siteSlug } = await request.json();
 
+    // 隨機選一個台灣名字
+    const randomName = getRandomName();
+
     // 根據網站選擇不同的 prompt
     const isBible = siteSlug === 'bible' || category === '信仰';
 
@@ -60,6 +75,11 @@ export async function POST(request: NextRequest) {
 - 用故事或情境開頭，讓讀者產生共鳴
 - 包含聖經經文引用
 - 提供實際應用建議
+
+人名規則：
+- 故事主角請使用「${randomName}」這個名字
+- 禁止使用「小明」「小華」「雅婷」「瑪莉亞」「約翰」「大衛」等常見或外國名字
+- 如果需要第二個角色，請自行從台灣常見名字中選擇（不要與主角重複）
 
 文章結構（嚴格遵守）：
 - H2 大標用中文數字：## 一、標題  ## 二、標題  ## 三、標題
@@ -80,6 +100,11 @@ export async function POST(request: NextRequest) {
 - 包含實際案例或故事
 - 提供可行動的建議
 
+人名規則：
+- 故事主角請使用「${randomName}」這個名字
+- 禁止使用「小明」「小華」「雅婷」「瑪莉亞」「約翰」「大衛」等常見或外國名字
+- 如果需要第二個角色，請自行從台灣常見名字中選擇（不要與主角重複）
+
 文章結構（嚴格遵守）：
 - H2 大標用中文數字：## 一、標題  ## 二、標題  ## 三、標題
 - H3 小標用阿拉伯數字：### 1. 標題  ### 2. 標題
@@ -94,9 +119,10 @@ export async function POST(request: NextRequest) {
 
 分類：${category}
 字數：${length}
+故事主角名字：${randomName}
 
 請用 Markdown 格式輸出文章內容（不含 frontmatter），包含：
-1. 開頭故事或情境（100-150字）
+1. 開頭故事或情境（100-150字，主角用「${randomName}」）
 2. 故事後精簡回答（粗體）
 3. 3 個 H2 段落（用 ## 一、 ## 二、 ## 三、格式）
 4. 每個 H2 底下 2-3 個 H3 段落（用 ### 1. ### 2. 格式）
@@ -152,7 +178,7 @@ ${isBible ? '5. 「## 相關經文」區塊\n6. 「## 實際應用」區塊' : '
         const parsed = JSON.parse(jsonMatch[1]);
         imageKeywords = parsed.imageKeywords || {};
         faq = parsed.faq || [];
-      } catch {}
+      } catch { }
       // 移除 JSON 區塊，留下純文章
       articleContent = rawContent.replace(/```json[\s\S]*?```/, '').trim();
     }
