@@ -105,7 +105,7 @@ export default function Home() {
         setSites(data.sites || []);
         setStep(1);
       }
-    } catch {}
+    } catch { }
   }
 
   async function handleLogin(e: React.FormEvent) {
@@ -265,7 +265,7 @@ export default function Home() {
             images: data.images || {},
           });
         }
-      } catch {}
+      } catch { }
 
       if (i < selectedTitles.length - 1) {
         await new Promise((r) => setTimeout(r, batchDelay * 1000));
@@ -297,7 +297,7 @@ export default function Home() {
 
     // 找到第一個 ## 後的段落末尾，插入 image1
     const h2Pattern = /^## [一二三四五六七八九十]/gm;
-    const h2Matches = [...content.matchAll(h2Pattern)];
+    const h2Matches = Array.from(content.matchAll(h2Pattern));
 
     const imagePositions = ['image1', 'image2', 'image3'];
     // 在每個 H2 段落的第一個 H3 之後或段落末尾插入對應圖片
@@ -380,7 +380,7 @@ ${content}`;
         if (res.ok) successCount++;
         // 延遲 1 秒避免 GitHub rate limit
         await new Promise((r) => setTimeout(r, 1000));
-      } catch {}
+      } catch { }
     }
 
     setLoading(false);
@@ -414,7 +414,7 @@ ${content}`;
         });
 
         if (res.ok) successCount++;
-      } catch {}
+      } catch { }
     }
 
     setLoading(false);
