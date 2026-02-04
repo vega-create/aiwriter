@@ -51,7 +51,6 @@ interface Article {
   images: ArticleImages;
 }
 
-// 圖片位置標籤
 const IMAGE_LABELS: Record<string, string> = {
   cover: '📷 封面圖',
   image1: '🖼️ 段落一配圖',
@@ -59,8 +58,65 @@ const IMAGE_LABELS: Record<string, string> = {
   image3: '🖼️ 段落三配圖',
 };
 
+// ========== Markdown → HTML ==========
+function markdownToHtml(md: string): string {
+  let html = md;
+  // H3 before H2 (order matters)
+  html = html.replace(/^### (.+)$/gm, '<h3 class="preview-h3">$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h2 class="preview-h2">$1</h2>');
+  html = html.replace(/^# (.+)$/gm, '<h1 class="preview-h1">$1</h1>');
+  // Bold & italic
+  html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // Images
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="preview-img" />');
+  // Links
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // Blockquote
+  html = html.replace(/^> (.+)$/gm, '<blockquote class="preview-quote">$1</blockquote>');
+  // Horizontal rule
+  html = html.replace(/^---$/gm, '<hr />');
+  // Paragraphs: split by double newline
+  const blocks = html.split(/\n\n+/);
+  html = blocks
+    .map((block) => {
+      const trimmed = block.trim();
+      if (!trimmed) return '';
+      if (
+        trimmed.startsWith('<h') ||
+        trimmed.startsWith('<img') ||
+        trimmed.startsWith('<blockquote') ||
+        trimmed.startsWith('<hr') ||
+        trimmed.startsWith('<ul') ||
+        trimmed.startsWith('<ol')
+      ) {
+        return trimmed;
+      }
+      return `<p>${trimmed.replace(/\n/g, '<br />')}</p>`;
+    })
+    .join('\n');
+
+  return html;
+}
+
+// ========== Extract TOC ==========
+function extractTOC(content: string): Array<{ level: number; text: string }> {
+  const toc: Array<{ level: number; text: string }> = [];
+  const lines = content.split('\n');
+  for (const line of lines) {
+    const h2 = line.match(/^## (.+)$/);
+    const h3 = line.match(/^### (.+)$/);
+    if (h3) {
+      toc.push({ level: 3, text: h3[1].trim() });
+    } else if (h2) {
+      toc.push({ level: 2, text: h2[1].trim() });
+    }
+  }
+  return toc;
+}
+
 export default function Home() {
-  // State
   const [user, setUser] = useState<User | null>(null);
   const [sites, setSites] = useState<Site[]>([]);
   const [currentSite, setCurrentSite] = useState<Site | null>(null);
@@ -73,7 +129,6 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState({ type: '', message: '' });
 
-  // Form state
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [category, setCategory] = useState('行銷');
   const [kwCount, setKwCount] = useState(20);
@@ -82,20 +137,24 @@ export default function Home() {
 
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, title: '' });
   const [batchRunning, setBatchRunning] = useState(false);
-  const batchRunningRef = { current: true };
 
-  // 圖片瀏覽 state
-  const [imageModal, setImageModal] = useState<{
-    articleIndex: number;
-    position: string;
-  } | null>(null);
+  const [imageModal, setImageModal] = useState<{ articleIndex: number; position: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchLoading, setSearchLoading] = useState(false);
 
-  // Check auth on mount
+  // 每篇文章的 tab 狀態
+  const [articleTabs, setArticleTabs] = useState<Record<number, 'preview' | 'markdown'>>({});
+
   useEffect(() => {
     checkAuth();
   }, []);
+
+  function getTab(idx: number): 'preview' | 'markdown' {
+    return articleTabs[idx] || 'preview';
+  }
+  function setTab(idx: number, tab: 'preview' | 'markdown') {
+    setArticleTabs((prev) => ({ ...prev, [idx]: tab }));
+  }
 
   async function checkAuth() {
     try {
@@ -113,17 +172,14 @@ export default function Home() {
     e.preventDefault();
     setLoading(true);
     setStatus({ type: '', message: '' });
-
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(loginForm),
       });
-
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '登入失敗');
-
       setUser(data.user);
       setSites(data.sites || []);
       setStep(1);
@@ -155,17 +211,14 @@ export default function Home() {
   async function generateKeywords() {
     setLoading(true);
     setStatus({ type: 'info', message: 'AI 正在規劃關鍵字...' });
-
     try {
       const res = await fetch('/api/keywords', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ category, count: kwCount }),
       });
-
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-
       setKeywords(data.keywords);
       setStatus({ type: 'success', message: `成功產生 ${data.keywords.length} 個關鍵字！` });
     } catch (err: any) {
@@ -179,25 +232,20 @@ export default function Home() {
     const selected = keywords.filter((_, i) =>
       (document.getElementById(`kw-${i}`) as HTMLInputElement)?.checked
     );
-
     if (selected.length === 0) {
       setStatus({ type: 'error', message: '請先選擇關鍵字' });
       return;
     }
-
     setLoading(true);
     setStatus({ type: 'info', message: 'AI 正在生成標題...' });
-
     try {
       const res = await fetch('/api/titles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ keywords: selected.map((k) => k.keyword) }),
       });
-
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-
       setTitles(data.titles);
       setStep(3);
       setStatus({ type: 'success', message: `成功生成 ${data.titles.length} 個標題！` });
@@ -225,7 +273,6 @@ export default function Home() {
     }
 
     setBatchRunning(true);
-    batchRunningRef.current = true;
     setBatchProgress({ current: 0, total: selectedTitles.length, title: '' });
     setStep(4);
     setArticles([]);
@@ -239,8 +286,6 @@ export default function Home() {
     const newArticles: Article[] = [];
 
     for (let i = 0; i < selectedTitles.length; i++) {
-      if (!batchRunningRef.current) break;
-
       const title = selectedTitles[i];
       setBatchProgress({ current: i + 1, total: selectedTitles.length, title });
 
@@ -289,36 +334,27 @@ export default function Home() {
       .slice(0, 50) + '-' + Date.now().toString(36);
   }
 
-  // 產生含圖片的 Markdown
   function generateMarkdown(article: Article): string {
     const date = new Date().toISOString().split('T')[0];
     const coverImage = article.images?.cover?.selected?.url || '';
     const coverAlt = article.images?.cover?.selected?.alt || article.title;
 
-    // 把 image1, image2, image3 插入文章對應位置
     let content = article.content;
 
-    // 找到第一個 ## 後的段落末尾，插入 image1
     const h2Pattern = /^## [一二三四五六七八九十]/gm;
     const h2Matches = Array.from(content.matchAll(h2Pattern));
-
     const imagePositions = ['image1', 'image2', 'image3'];
-    // 在每個 H2 段落的第一個 H3 之後或段落末尾插入對應圖片
+
     for (let idx = 0; idx < Math.min(h2Matches.length, 3); idx++) {
       const pos = imagePositions[idx];
       const imgData = article.images?.[pos]?.selected;
       if (!imgData?.url) continue;
 
       const imgMarkdown = `\n\n![${imgData.alt}](${imgData.url})\n`;
-
-      // 找這個 H2 和下一個 H2 之間的範圍
       const endIdx = h2Matches[idx + 1]?.index || content.length;
-
-      // 在 section 末尾插入圖片（下一個 H2 之前）
       content = content.slice(0, endIdx) + imgMarkdown + content.slice(endIdx);
     }
 
-    // FAQ frontmatter
     const faqYaml = article.faq
       .map((f) => `  - q: "${f.q.replace(/"/g, '\\"')}"\n    a: "${f.a.replace(/"/g, '\\"')}"`)
       .join('\n');
@@ -337,6 +373,12 @@ author: "${user?.email || 'AI Writer'}"
 ---
 
 ${content}`;
+  }
+
+  function updateArticleContent(idx: number, newContent: string) {
+    const updated = [...articles];
+    updated[idx] = { ...updated[idx], content: newContent };
+    setArticles(updated);
   }
 
   function downloadMarkdown(article: Article) {
@@ -360,12 +402,9 @@ ${content}`;
       setStatus({ type: 'error', message: '此網站未設定 GitHub' });
       return;
     }
-
     setLoading(true);
     setStatus({ type: 'info', message: '推送到 GitHub...' });
-
     let successCount = 0;
-
     for (const article of articles) {
       try {
         const res = await fetch('/api/upload/github', {
@@ -377,12 +416,10 @@ ${content}`;
             content: generateMarkdown(article),
           }),
         });
-
         if (res.ok) successCount++;
         await new Promise((r) => setTimeout(r, 1000));
       } catch { }
     }
-
     setLoading(false);
     setStatus({
       type: successCount === articles.length ? 'success' : 'error',
@@ -393,9 +430,7 @@ ${content}`;
   async function uploadToSupabase() {
     setLoading(true);
     setStatus({ type: 'info', message: '上傳到 Supabase...' });
-
     let successCount = 0;
-
     for (const article of articles) {
       try {
         const res = await fetch('/api/upload/supabase', {
@@ -412,11 +447,9 @@ ${content}`;
             },
           }),
         });
-
         if (res.ok) successCount++;
       } catch { }
     }
-
     setLoading(false);
     setStatus({
       type: successCount === articles.length ? 'success' : 'error',
@@ -425,19 +458,13 @@ ${content}`;
   }
 
   // ========== 圖片操作 ==========
-
   function randomSwapImage(articleIndex: number, position: string) {
     const updated = [...articles];
-    const article = updated[articleIndex];
-    const posData = article.images[position];
+    const posData = updated[articleIndex].images[position];
     if (!posData?.candidates?.length) return;
-
-    const currentUrl = posData.selected.url;
-    const others = posData.candidates.filter((c) => c.url !== currentUrl);
+    const others = posData.candidates.filter((c) => c.url !== posData.selected.url);
     if (others.length === 0) return;
-
-    const random = others[Math.floor(Math.random() * others.length)];
-    posData.selected = random;
+    posData.selected = others[Math.floor(Math.random() * others.length)];
     setArticles(updated);
   }
 
@@ -450,7 +477,6 @@ ${content}`;
 
   async function researchImages(articleIndex: number, position: string, query: string) {
     if (!query.trim()) return;
-
     setSearchLoading(true);
     try {
       const res = await fetch('/api/images/search', {
@@ -458,7 +484,6 @@ ${content}`;
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: query.trim() }),
       });
-
       const data = await res.json();
       if (data.candidates?.length) {
         const updated = [...articles];
@@ -480,44 +505,23 @@ ${content}`;
 
   // ========== RENDER ==========
 
-  // Login
   if (step === 0) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
         <div className="card" style={{ maxWidth: 400, width: '100%' }}>
-          <h1 style={{ textAlign: 'center', marginBottom: 30, color: 'var(--primary-dark)' }}>
-            🌸 AI 產文系統
-          </h1>
-
+          <h1 style={{ textAlign: 'center', marginBottom: 30, color: 'var(--primary-dark)' }}>🌸 AI 產文系統</h1>
           {status.message && <div className={`status status-${status.type}`}>{status.message}</div>}
-
           <form onSubmit={handleLogin}>
             <div className="form-group">
               <label>Email</label>
-              <input
-                type="email"
-                value={loginForm.email}
-                onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
-                required
-              />
+              <input type="email" value={loginForm.email} onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })} required />
             </div>
             <div className="form-group">
               <label>密碼</label>
-              <input
-                type="password"
-                value={loginForm.password}
-                onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
-                required
-              />
+              <input type="password" value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} required />
             </div>
             <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={loading}>
-              {loading ? (
-                <>
-                  <span className="loading-spinner" /> 登入中...
-                </>
-              ) : (
-                '登入'
-              )}
+              {loading ? (<><span className="loading-spinner" /> 登入中...</>) : '登入'}
             </button>
           </form>
         </div>
@@ -525,7 +529,6 @@ ${content}`;
     );
   }
 
-  // Site Selection
   if (step === 1) {
     return (
       <>
@@ -534,13 +537,10 @@ ${content}`;
             <h1>🌸 AI 產文系統</h1>
             <div className="header-user">
               <span>{user?.email}</span>
-              <button className="btn btn-secondary btn-sm" onClick={handleLogout}>
-                登出
-              </button>
+              <button className="btn btn-secondary btn-sm" onClick={handleLogout}>登出</button>
             </div>
           </div>
         </header>
-
         <div className="container">
           <div className="card">
             <h3>選擇網站</h3>
@@ -551,7 +551,6 @@ ${content}`;
                   <p>{site.slug}</p>
                 </div>
               ))}
-
               {user?.role === 'admin' && (
                 <div className="site-card" style={{ border: '2px dashed var(--border)' }}>
                   <h3 style={{ color: 'var(--text-light)' }}>+ 新增網站</h3>
@@ -565,26 +564,20 @@ ${content}`;
     );
   }
 
-  // Main Writing Flow
   return (
     <>
       <header className="header">
         <div className="header-content">
           <h1>🌸 {currentSite?.name}</h1>
           <div className="header-user">
-            <button className="btn btn-secondary btn-sm" onClick={() => setStep(1)}>
-              ← 換網站
-            </button>
+            <button className="btn btn-secondary btn-sm" onClick={() => setStep(1)}>← 換網站</button>
             <span>{user?.email}</span>
-            <button className="btn btn-secondary btn-sm" onClick={handleLogout}>
-              登出
-            </button>
+            <button className="btn btn-secondary btn-sm" onClick={handleLogout}>登出</button>
           </div>
         </div>
       </header>
 
       <div className="container">
-        {/* Workflow */}
         <div className="workflow">
           <div className={`workflow-step ${step >= 2 ? (step > 2 ? 'done' : 'active') : ''}`}>1. 關鍵字</div>
           <span className="workflow-arrow">→</span>
@@ -597,7 +590,7 @@ ${content}`;
 
         {status.message && <div className={`status status-${status.type}`}>{status.message}</div>}
 
-        {/* Step 2: Keywords */}
+        {/* Step 2 */}
         {step === 2 && (
           <>
             <div className="card">
@@ -612,12 +605,7 @@ ${content}`;
                       <option value="faq">❓ 信仰問答</option>
                     </select>
                   ) : (
-                    <input
-                      type="text"
-                      value={category}
-                      onChange={(e) => setCategory(e.target.value)}
-                      placeholder="輸入分類，例如：團購、育兒、行銷"
-                    />
+                    <input type="text" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="輸入分類，例如：團購、育兒、行銷" />
                   )}
                 </div>
                 <div className="form-group">
@@ -631,20 +619,11 @@ ${content}`;
               </div>
               <div className="btn-group">
                 <button className="btn btn-primary" onClick={generateKeywords} disabled={loading}>
-                  {loading ? (
-                    <>
-                      <span className="loading-spinner" /> 產生中...
-                    </>
-                  ) : (
-                    '🔍 產生關鍵字'
-                  )}
+                  {loading ? (<><span className="loading-spinner" /> 產生中...</>) : '🔍 產生關鍵字'}
                 </button>
-                <button className="btn btn-secondary" onClick={() => setStep(3)}>
-                  ⏭️ 跳過，直接輸入標題
-                </button>
+                <button className="btn btn-secondary" onClick={() => setStep(3)}>⏭️ 跳過，直接輸入標題</button>
               </div>
             </div>
-
             {keywords.length > 0 && (
               <div className="card">
                 <h3>📋 關鍵字列表</h3>
@@ -660,128 +639,78 @@ ${content}`;
                   ))}
                 </div>
                 <div className="btn-group" style={{ marginTop: 20 }}>
-                  <button className="btn btn-primary" onClick={generateTitles} disabled={loading}>
-                    下一步：生成標題 →
-                  </button>
+                  <button className="btn btn-primary" onClick={generateTitles} disabled={loading}>下一步：生成標題 →</button>
                 </div>
               </div>
             )}
           </>
         )}
 
-        {/* Step 3: Titles */}
+        {/* Step 3 */}
         {step === 3 && (
-          <>
-            <div className="card">
-              <h3>✏️ Step 2：文章標題（可編輯）</h3>
-
-              {titles.length === 0 ? (
-                <div className="form-group">
-                  <label>輸入標題（每行一個）</label>
-                  <textarea
-                    id="manual-titles"
-                    rows={6}
-                    placeholder="如何開始讀聖經？&#10;基督徒可以喝酒嗎？"
-                  />
-                  <div className="btn-group" style={{ marginTop: 15 }}>
-                    <button className="btn btn-secondary" onClick={() => setStep(2)}>
-                      ← 上一步
-                    </button>
-                    <button
-                      className="btn btn-primary"
-                      onClick={() => {
-                        const input = (document.getElementById('manual-titles') as HTMLTextAreaElement).value;
-                        const manualTitles = input
-                          .split('\n')
-                          .filter((t) => t.trim())
-                          .map((t) => ({
-                            keyword: '自訂',
-                            title: t.trim(),
-                          }));
-                        if (manualTitles.length > 0) {
-                          setTitles(manualTitles);
-                        } else {
-                          setStatus({ type: 'error', message: '請輸入至少一個標題' });
-                        }
-                      }}
-                    >
-                      確認標題
-                    </button>
+          <div className="card">
+            <h3>✏️ Step 2：文章標題（可編輯）</h3>
+            {titles.length === 0 ? (
+              <div className="form-group">
+                <label>輸入標題（每行一個）</label>
+                <textarea id="manual-titles" rows={6} placeholder="如何開始讀聖經？&#10;基督徒可以喝酒嗎？" />
+                <div className="btn-group" style={{ marginTop: 15 }}>
+                  <button className="btn btn-secondary" onClick={() => setStep(2)}>← 上一步</button>
+                  <button className="btn btn-primary" onClick={() => {
+                    const input = (document.getElementById('manual-titles') as HTMLTextAreaElement).value;
+                    const manualTitles = input.split('\n').filter((t) => t.trim()).map((t) => ({ keyword: '自訂', title: t.trim() }));
+                    if (manualTitles.length > 0) setTitles(manualTitles);
+                    else setStatus({ type: 'error', message: '請輸入至少一個標題' });
+                  }}>確認標題</button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="items-list">
+                  {titles.map((t, i) => (
+                    <div className="item" key={i} style={{ flexWrap: 'wrap' }}>
+                      <input type="checkbox" id={`title-${i}`} defaultChecked />
+                      <div className="item-content" style={{ flex: 1 }}>
+                        <input type="text" id={`title-input-${i}`} defaultValue={t.title} style={{ width: '100%', padding: 10, border: '1px solid #ddd', borderRadius: 6 }} />
+                        <div className="item-meta" style={{ marginTop: 8 }}>原：{t.keyword}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="form-row" style={{ marginTop: 20 }}>
+                  <div className="form-group">
+                    <label>文章長度</label>
+                    <select value={articleLength} onChange={(e) => setArticleLength(e.target.value)}>
+                      <option value="short">短（800-1000字）</option>
+                      <option value="medium">中（1500-2000字）</option>
+                      <option value="long">長（2500-3000字）</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>間隔秒數</label>
+                    <input type="number" value={batchDelay} onChange={(e) => setBatchDelay(Number(e.target.value))} min={10} />
                   </div>
                 </div>
-              ) : (
-                <>
-                  <div className="items-list">
-                    {titles.map((t, i) => (
-                      <div className="item" key={i} style={{ flexWrap: 'wrap' }}>
-                        <input type="checkbox" id={`title-${i}`} defaultChecked />
-                        <div className="item-content" style={{ flex: 1 }}>
-                          <input
-                            type="text"
-                            id={`title-input-${i}`}
-                            defaultValue={t.title}
-                            style={{ width: '100%', padding: 10, border: '1px solid #ddd', borderRadius: 6 }}
-                          />
-                          <div className="item-meta" style={{ marginTop: 8 }}>
-                            原：{t.keyword}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="form-row" style={{ marginTop: 20 }}>
-                    <div className="form-group">
-                      <label>文章長度</label>
-                      <select value={articleLength} onChange={(e) => setArticleLength(e.target.value)}>
-                        <option value="short">短（800-1000字）</option>
-                        <option value="medium">中（1500-2000字）</option>
-                        <option value="long">長（2500-3000字）</option>
-                      </select>
-                    </div>
-                    <div className="form-group">
-                      <label>間隔秒數</label>
-                      <input
-                        type="number"
-                        value={batchDelay}
-                        onChange={(e) => setBatchDelay(Number(e.target.value))}
-                        min={10}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="btn-group">
-                    <button className="btn btn-secondary" onClick={() => { setTitles([]); setStep(2); }}>
-                      ← 上一步
-                    </button>
-                    <button className="btn btn-primary" onClick={startBatchGenerate}>
-                      📄 開始產生文章
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </>
+                <div className="btn-group">
+                  <button className="btn btn-secondary" onClick={() => { setTitles([]); setStep(2); }}>← 上一步</button>
+                  <button className="btn btn-primary" onClick={startBatchGenerate}>📄 開始產生文章</button>
+                </div>
+              </>
+            )}
+          </div>
         )}
 
-        {/* Step 4: Generating */}
+        {/* Step 4 */}
         {step === 4 && (
           <div className="card">
             <h3>⏳ 產生中...（含圖片搜尋）</h3>
             <div style={{ marginBottom: 20 }}>
               <div className="progress-bar">
-                <div
-                  className="progress-fill"
-                  style={{ width: `${(batchProgress.current / batchProgress.total) * 100}%` }}
-                />
+                <div className="progress-fill" style={{ width: `${(batchProgress.current / batchProgress.total) * 100}%` }} />
               </div>
-              <p style={{ textAlign: 'center', marginTop: 10 }}>
-                {batchProgress.current} / {batchProgress.total} - {batchProgress.title}
-              </p>
+              <p style={{ textAlign: 'center', marginTop: 10 }}>{batchProgress.current} / {batchProgress.total} - {batchProgress.title}</p>
             </div>
-            <button className="btn btn-danger" onClick={() => setBatchRunning(false)}>
-              ⏹️ 停止
-            </button>
+            <button className="btn btn-danger" onClick={() => setBatchRunning(false)}>⏹️ 停止</button>
           </div>
         )}
 
@@ -789,147 +718,149 @@ ${content}`;
         {step === 5 && (
           <>
             <div className="card">
-              <h3>✅ 產生完成！共 {articles.length} 篇（點擊圖片可換圖）</h3>
+              <h3>✅ 產生完成！共 {articles.length} 篇</h3>
             </div>
 
-            {articles.map((article, articleIdx) => (
-              <div className="card" key={articleIdx}>
-                <h3 style={{ fontSize: 16, marginBottom: 15 }}>
-                  📄 {article.title}
-                </h3>
+            {articles.map((article, articleIdx) => {
+              const tab = getTab(articleIdx);
+              const toc = extractTOC(article.content);
 
-                <div className="image-grid">
-                  {['cover', 'image1', 'image2', 'image3'].map((pos) => {
-                    const imgData = article.images?.[pos];
-                    const selected = imgData?.selected;
-                    const candidateCount = imgData?.candidates?.length || 0;
+              return (
+                <div className="card" key={articleIdx}>
+                  <h3 style={{ fontSize: 18, marginBottom: 15 }}>📄 {article.title}</h3>
 
-                    return (
-                      <div className="image-slot" key={pos}>
-                        <div className="image-label">{IMAGE_LABELS[pos]}</div>
-                        <div
-                          className="image-preview"
-                          onClick={() => {
-                            setImageModal({ articleIndex: articleIdx, position: pos });
-                            setSearchQuery(article.imageKeywords?.[pos] || '');
-                          }}
-                        >
-                          {selected?.url ? (
-                            <img src={selected.thumbnail || selected.url} alt={selected.alt} />
-                          ) : (
-                            <div className="image-empty">無圖片</div>
-                          )}
+                  {/* 圖片區 */}
+                  <div className="image-grid">
+                    {['cover', 'image1', 'image2', 'image3'].map((pos) => {
+                      const imgData = article.images?.[pos];
+                      const selected = imgData?.selected;
+                      const candidateCount = imgData?.candidates?.length || 0;
+                      return (
+                        <div className="image-slot" key={pos}>
+                          <div className="image-label">{IMAGE_LABELS[pos]}</div>
+                          <div className="image-preview" onClick={() => { setImageModal({ articleIndex: articleIdx, position: pos }); setSearchQuery(article.imageKeywords?.[pos] || ''); }}>
+                            {selected?.url ? <img src={selected.thumbnail || selected.url} alt={selected.alt} /> : <div className="image-empty">無圖片</div>}
+                          </div>
+                          <div className="image-actions">
+                            <button className="btn btn-secondary btn-sm" onClick={() => randomSwapImage(articleIdx, pos)} title="隨機換圖">🔄</button>
+                            <span className="image-count">{candidateCount} 張候選</span>
+                          </div>
                         </div>
-                        <div className="image-actions">
-                          <button
-                            className="btn btn-secondary btn-sm"
-                            onClick={() => randomSwapImage(articleIdx, pos)}
-                            title="隨機換圖"
-                          >
-                            🔄
-                          </button>
-                          <span className="image-count">{candidateCount} 張候選</span>
+                      );
+                    })}
+                  </div>
+
+                  {/* Tab 切換 */}
+                  <div className="article-tabs">
+                    <button className={`article-tab ${tab === 'preview' ? 'active' : ''}`} onClick={() => setTab(articleIdx, 'preview')}>
+                      👁️ 預覽
+                    </button>
+                    <button className={`article-tab ${tab === 'markdown' ? 'active' : ''}`} onClick={() => setTab(articleIdx, 'markdown')}>
+                      📝 Markdown 編輯
+                    </button>
+                  </div>
+
+                  {/* 預覽模式 */}
+                  {tab === 'preview' && (
+                    <div className="article-preview-area">
+                      {/* TOC */}
+                      {toc.length > 0 && (
+                        <div className="preview-toc">
+                          <div className="preview-toc-title">📑 目錄</div>
+                          <ul className="preview-toc-list">
+                            {toc.map((item, i) => (
+                              <li key={i} className={item.level === 3 ? 'toc-h3' : 'toc-h2'}>
+                                {item.text}
+                              </li>
+                            ))}
+                          </ul>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      )}
+                      {/* 文章內容 */}
+                      <div className="preview-body" dangerouslySetInnerHTML={{ __html: markdownToHtml(article.content) }} />
+                      {/* FAQ */}
+                      {article.faq.length > 0 && (
+                        <div className="preview-faq">
+                          <h2 className="preview-h2">❓ 常見問題 FAQ</h2>
+                          {article.faq.map((f, i) => (
+                            <div className="faq-item" key={i}>
+                              <div className="faq-q">Q: {f.q}</div>
+                              <div className="faq-a">A: {f.a}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
-                <div className="btn-group" style={{ marginTop: 15 }}>
-                  <button className="btn btn-secondary btn-sm" onClick={() => downloadMarkdown(article)}>
-                    📥 下載 Markdown
-                  </button>
-                </div>
-              </div>
-            ))}
+                  {/* Markdown 編輯模式 */}
+                  {tab === 'markdown' && (
+                    <div className="article-editor-area">
+                      <textarea
+                        className="markdown-editor"
+                        value={article.content}
+                        onChange={(e) => updateArticleContent(articleIdx, e.target.value)}
+                        spellCheck={false}
+                      />
+                    </div>
+                  )}
 
+                  {/* 按鈕 */}
+                  <div className="btn-group" style={{ marginTop: 15 }}>
+                    <button className="btn btn-secondary btn-sm" onClick={() => downloadMarkdown(article)}>📥 下載 Markdown</button>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* 批量操作 */}
             <div className="card">
               <h3>📤 批量操作</h3>
               <div className="btn-group">
-                <button className="btn btn-primary" onClick={downloadAllMarkdown}>
-                  📥 下載全部 Markdown
-                </button>
+                <button className="btn btn-primary" onClick={downloadAllMarkdown}>📥 下載全部 Markdown</button>
                 {currentSite?.github_repo && (
                   <button className="btn btn-success" onClick={uploadToGitHub} disabled={loading}>
-                    {loading ? (
-                      <>
-                        <span className="loading-spinner" /> 推送中...
-                      </>
-                    ) : (
-                      '🐙 推送到 GitHub'
-                    )}
+                    {loading ? (<><span className="loading-spinner" /> 推送中...</>) : '🐙 推送到 GitHub'}
                   </button>
                 )}
-                <button className="btn btn-secondary" onClick={uploadToSupabase} disabled={loading}>
-                  🗄️ 存到 Supabase
-                </button>
+                <button className="btn btn-secondary" onClick={uploadToSupabase} disabled={loading}>🗄️ 存到 Supabase</button>
               </div>
             </div>
-
             <div className="btn-group">
-              <button className="btn btn-secondary" onClick={() => setStep(2)}>
-                🔄 重新開始
-              </button>
+              <button className="btn btn-secondary" onClick={() => setStep(2)}>🔄 重新開始</button>
             </div>
           </>
         )}
       </div>
 
-      {/* ========== 圖片候選 Modal ========== */}
+      {/* 圖片 Modal */}
       {imageModal && (
         <div className="modal-overlay" onClick={() => setImageModal(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>{IMAGE_LABELS[imageModal.position]} — 候選圖片</h3>
-              <button className="modal-close" onClick={() => setImageModal(null)}>
-                ✕
-              </button>
+              <button className="modal-close" onClick={() => setImageModal(null)}>✕</button>
             </div>
-
             <div className="modal-search">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="輸入英文關鍵字重新搜尋..."
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    researchImages(imageModal.articleIndex, imageModal.position, searchQuery);
-                  }
-                }}
-              />
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={() => researchImages(imageModal.articleIndex, imageModal.position, searchQuery)}
-                disabled={searchLoading}
-              >
+              <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="輸入英文關鍵字重新搜尋..."
+                onKeyDown={(e) => { if (e.key === 'Enter') researchImages(imageModal.articleIndex, imageModal.position, searchQuery); }} />
+              <button className="btn btn-primary btn-sm" onClick={() => researchImages(imageModal.articleIndex, imageModal.position, searchQuery)} disabled={searchLoading}>
                 {searchLoading ? '搜尋中...' : '🔍 搜尋'}
               </button>
             </div>
-
             <div className="modal-grid">
-              {articles[imageModal.articleIndex]?.images?.[imageModal.position]?.candidates?.map(
-                (candidate, idx) => {
-                  const isSelected =
-                    candidate.url ===
-                    articles[imageModal.articleIndex]?.images?.[imageModal.position]?.selected?.url;
-                  return (
-                    <div
-                      key={idx}
-                      className={`modal-image ${isSelected ? 'selected' : ''}`}
-                      onClick={() => selectImage(imageModal.articleIndex, imageModal.position, candidate)}
-                    >
-                      <img src={candidate.thumbnail} alt={candidate.alt} />
-                      {isSelected && <div className="modal-image-check">✓</div>}
-                      <div className="modal-image-credit">📸 {candidate.photographer}</div>
-                    </div>
-                  );
-                }
-              )}
+              {articles[imageModal.articleIndex]?.images?.[imageModal.position]?.candidates?.map((candidate, idx) => {
+                const isSelected = candidate.url === articles[imageModal.articleIndex]?.images?.[imageModal.position]?.selected?.url;
+                return (
+                  <div key={idx} className={`modal-image ${isSelected ? 'selected' : ''}`} onClick={() => selectImage(imageModal.articleIndex, imageModal.position, candidate)}>
+                    <img src={candidate.thumbnail} alt={candidate.alt} />
+                    {isSelected && <div className="modal-image-check">✓</div>}
+                    <div className="modal-image-credit">📸 {candidate.photographer}</div>
+                  </div>
+                );
+              })}
               {(!articles[imageModal.articleIndex]?.images?.[imageModal.position]?.candidates?.length) && (
-                <div style={{ padding: 20, color: 'var(--text-light)', textAlign: 'center', gridColumn: '1/-1' }}>
-                  沒有候選圖片，請輸入關鍵字搜尋
-                </div>
+                <div style={{ padding: 20, color: 'var(--text-light)', textAlign: 'center', gridColumn: '1/-1' }}>沒有候選圖片，請輸入關鍵字搜尋</div>
               )}
             </div>
           </div>
