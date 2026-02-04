@@ -6,6 +6,7 @@ const openai = new OpenAI({
 });
 
 const PEXELS_API_KEY = process.env.PEXELS_API_KEY;
+const FREEPIK_API_KEY = process.env.FREEPIK_API_KEY;
 
 // 台灣常見名字列表（每次隨機選一個）
 const TW_NAMES = [
@@ -19,14 +20,28 @@ function getRandomName(): string {
   return TW_NAMES[Math.floor(Math.random() * TW_NAMES.length)];
 }
 
-// 搜 Pexels 圖片，一次拿 20 張候選
-async function searchPexelsImages(query: string) {
-  const empty = {
-    selected: { url: '', thumbnail: '', alt: '', photographer: '' },
-    candidates: [] as Array<{ url: string; thumbnail: string; alt: string; photographer: string }>,
-  };
+type ImageCandidate = {
+  url: string;
+  thumbnail: string;
+  alt: string;
+  photographer: string;
+};
 
-  if (!PEXELS_API_KEY) return empty;
+type ImageResult = {
+  selected: ImageCandidate;
+  candidates: ImageCandidate[];
+  source?: string;
+};
+
+const EMPTY_RESULT: ImageResult = {
+  selected: { url: '', thumbnail: '', alt: '', photographer: '' },
+  candidates: [],
+  source: 'none',
+};
+
+// 搜 Pexels 圖片，一次拿 20 張候選
+async function searchPexelsImages(query: string): Promise<ImageResult> {
+  if (!PEXELS_API_KEY) return { ...EMPTY_RESULT };
 
   try {
     const response = await fetch(
@@ -35,7 +50,7 @@ async function searchPexelsImages(query: string) {
     );
     const data = await response.json();
 
-    if (!data.photos?.length) return empty;
+    if (!data.photos?.length) return { ...EMPTY_RESULT };
 
     const candidates = data.photos.map((photo: any) => ({
       url: photo.src.large2x,
@@ -44,16 +59,79 @@ async function searchPexelsImages(query: string) {
       photographer: photo.photographer,
     }));
 
-    // 隨機選一張作為預設
     const randomIndex = Math.floor(Math.random() * candidates.length);
 
     return {
       selected: candidates[randomIndex],
       candidates,
+      source: 'pexels',
     };
   } catch {
-    return empty;
+    return { ...EMPTY_RESULT };
   }
+}
+
+// Freepik 搜圖（亞洲面孔備用）
+async function searchFreepikImages(query: string): Promise<ImageResult> {
+  if (!FREEPIK_API_KEY) return { ...EMPTY_RESULT };
+
+  try {
+    const response = await fetch(
+      `https://api.freepik.com/v1/resources?locale=zh-TW&page=1&limit=20&term=${encodeURIComponent(query)}`,
+      {
+        headers: {
+          'x-freepik-api-key': FREEPIK_API_KEY,
+          'Accept-Language': 'zh-TW',
+        },
+      }
+    );
+    const data = await response.json();
+
+    if (!data.data?.length) return { ...EMPTY_RESULT };
+
+    const candidates = data.data
+      .map((item: any) => ({
+        url: item.image?.source_url || item.url || '',
+        thumbnail: item.image?.source_url || item.url || '',
+        alt: item.title || query,
+        photographer: 'Freepik',
+      }))
+      .filter((c: ImageCandidate) => c.url);
+
+    if (!candidates.length) return { ...EMPTY_RESULT };
+
+    const randomIndex = Math.floor(Math.random() * candidates.length);
+
+    return {
+      selected: candidates[randomIndex],
+      candidates,
+      source: 'freepik',
+    };
+  } catch {
+    return { ...EMPTY_RESULT };
+  }
+}
+
+// 智慧搜圖：繁中網站先搜 asian + query，沒結果用 Freepik fallback
+async function searchImages(query: string, needAsian: boolean): Promise<ImageResult> {
+  if (needAsian) {
+    // 1. Pexels + asian 關鍵字
+    const asianResult = await searchPexelsImages(`asian ${query}`);
+    if (asianResult.candidates.length) return asianResult;
+
+    // 2. Freepik fallback
+    const freepikResult = await searchFreepikImages(query);
+    if (freepikResult.candidates.length) return freepikResult;
+
+    // 3. Pexels 原始 query（至少有圖）
+    const fallbackResult = await searchPexelsImages(query);
+    if (fallbackResult.candidates.length) return fallbackResult;
+
+    return { ...EMPTY_RESULT };
+  }
+
+  // 非亞洲網站：直接用 Pexels
+  return searchPexelsImages(query);
 }
 
 export async function POST(request: NextRequest) {
@@ -183,15 +261,18 @@ ${isBible ? '5. 「## 相關經文」區塊\n6. 「## 實際應用」區塊' : '
       articleContent = rawContent.replace(/```json[\s\S]*?```/, '').trim();
     }
 
-    // 用 Pexels 搜圖（4 個位置，每個 20 張候選）
+    // 搜圖（4 個位置，每個 20 張候選）
     const imagePositions = ['cover', 'image1', 'image2', 'image3'];
     const images: Record<string, any> = {};
+
+    // 繁中網站需要亞洲面孔圖片
+    const needAsian = siteSlug === 'bible' || siteSlug === 'mommystartup';
 
     await Promise.all(
       imagePositions.map(async (pos) => {
         const query = imageKeywords[pos];
         if (query) {
-          images[pos] = await searchPexelsImages(query);
+          images[pos] = await searchImages(query, needAsian);
         }
       })
     );
