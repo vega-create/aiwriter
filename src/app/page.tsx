@@ -82,6 +82,7 @@ export default function Home() {
 
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, title: '' });
   const [batchRunning, setBatchRunning] = useState(false);
+  const batchRunningRef = { current: true };
 
   // 圖片瀏覽 state
   const [imageModal, setImageModal] = useState<{
@@ -224,6 +225,7 @@ export default function Home() {
     }
 
     setBatchRunning(true);
+    batchRunningRef.current = true;
     setBatchProgress({ current: 0, total: selectedTitles.length, title: '' });
     setStep(4);
     setArticles([]);
@@ -237,7 +239,7 @@ export default function Home() {
     const newArticles: Article[] = [];
 
     for (let i = 0; i < selectedTitles.length; i++) {
-      if (!batchRunning) break;
+      if (!batchRunningRef.current) break;
 
       const title = selectedTitles[i];
       setBatchProgress({ current: i + 1, total: selectedTitles.length, title });
