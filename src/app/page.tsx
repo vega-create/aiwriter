@@ -144,7 +144,7 @@ export default function Home() {
 
   function selectSite(site: Site) {
     setCurrentSite(site);
-    setCategory(site.slug === 'bible' ? 'daily-devotion' : '行銷');
+    setCategory(site.slug === 'bible' ? 'daily-devotion' : '');
     setStep(2);
     setKeywords([]);
     setTitles([]);
@@ -310,9 +310,7 @@ export default function Home() {
       const imgMarkdown = `\n\n![${imgData.alt}](${imgData.url})\n`;
 
       // 找這個 H2 和下一個 H2 之間的範圍
-      const startIdx = h2Matches[idx].index! + h2Matches[idx][0].length;
       const endIdx = h2Matches[idx + 1]?.index || content.length;
-      const section = content.slice(startIdx, endIdx);
 
       // 在 section 末尾插入圖片（下一個 H2 之前）
       content = content.slice(0, endIdx) + imgMarkdown + content.slice(endIdx);
@@ -379,7 +377,6 @@ ${content}`;
         });
 
         if (res.ok) successCount++;
-        // 延遲 1 秒避免 GitHub rate limit
         await new Promise((r) => setTimeout(r, 1000));
       } catch { }
     }
@@ -427,7 +424,6 @@ ${content}`;
 
   // ========== 圖片操作 ==========
 
-  // 從候選裡隨機換一張
   function randomSwapImage(articleIndex: number, position: string) {
     const updated = [...articles];
     const article = updated[articleIndex];
@@ -443,7 +439,6 @@ ${content}`;
     setArticles(updated);
   }
 
-  // 從候選裡點選一張
   function selectImage(articleIndex: number, position: string, candidate: ImageItem) {
     const updated = [...articles];
     updated[articleIndex].images[position].selected = candidate;
@@ -451,7 +446,6 @@ ${content}`;
     setImageModal(null);
   }
 
-  // 重新搜尋圖片
   async function researchImages(articleIndex: number, position: string, query: string) {
     if (!query.trim()) return;
 
@@ -470,7 +464,6 @@ ${content}`;
           selected: data.candidates[0],
           candidates: data.candidates,
         };
-        // 同步更新 keywords
         updated[articleIndex].imageKeywords[position] = query.trim();
         setArticles(updated);
       } else {
@@ -610,21 +603,20 @@ ${content}`;
               <div className="form-row">
                 <div className="form-group">
                   <label>分類</label>
-                  <select value={category} onChange={(e) => setCategory(e.target.value)}>
-                    {currentSite?.slug === 'bible' ? (
-                      <>
-                        <option value="daily-devotion">🕊️ 每日靈修</option>
-                        <option value="bible-study">📖 經文解釋</option>
-                        <option value="faq">❓ 信仰問答</option>
-                      </>
-                    ) : (
-                      <>
-                        <option value="行銷">行銷</option>
-                        <option value="團購">團購</option>
-                        <option value="育兒">育兒</option>
-                      </>
-                    )}
-                  </select>
+                  {currentSite?.slug === 'bible' ? (
+                    <select value={category} onChange={(e) => setCategory(e.target.value)}>
+                      <option value="daily-devotion">🕊️ 每日靈修</option>
+                      <option value="bible-study">📖 經文解釋</option>
+                      <option value="faq">❓ 信仰問答</option>
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                      placeholder="輸入分類，例如：團購、育兒、行銷"
+                    />
+                  )}
                 </div>
                 <div className="form-group">
                   <label>數量</label>
@@ -798,14 +790,12 @@ ${content}`;
               <h3>✅ 產生完成！共 {articles.length} 篇（點擊圖片可換圖）</h3>
             </div>
 
-            {/* 每篇文章的預覽 */}
             {articles.map((article, articleIdx) => (
               <div className="card" key={articleIdx}>
                 <h3 style={{ fontSize: 16, marginBottom: 15 }}>
                   📄 {article.title}
                 </h3>
 
-                {/* 圖片預覽區 */}
                 <div className="image-grid">
                   {['cover', 'image1', 'image2', 'image3'].map((pos) => {
                     const imgData = article.images?.[pos];
@@ -843,7 +833,6 @@ ${content}`;
                   })}
                 </div>
 
-                {/* 操作按鈕 */}
                 <div className="btn-group" style={{ marginTop: 15 }}>
                   <button className="btn btn-secondary btn-sm" onClick={() => downloadMarkdown(article)}>
                     📥 下載 Markdown
@@ -852,7 +841,6 @@ ${content}`;
               </div>
             ))}
 
-            {/* 批量操作 */}
             <div className="card">
               <h3>📤 批量操作</h3>
               <div className="btn-group">
@@ -896,7 +884,6 @@ ${content}`;
               </button>
             </div>
 
-            {/* 搜尋列 */}
             <div className="modal-search">
               <input
                 type="text"
@@ -918,7 +905,6 @@ ${content}`;
               </button>
             </div>
 
-            {/* 候選圖片 */}
             <div className="modal-grid">
               {articles[imageModal.articleIndex]?.images?.[imageModal.position]?.candidates?.map(
                 (candidate, idx) => {
