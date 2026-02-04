@@ -144,6 +144,7 @@ export default function Home() {
 
   function selectSite(site: Site) {
     setCurrentSite(site);
+    setCategory(site.slug === 'bible' ? 'daily-devotion' : '行銷');
     setStep(2);
     setKeywords([]);
     setTitles([]);
@@ -610,10 +611,19 @@ ${content}`;
                 <div className="form-group">
                   <label>分類</label>
                   <select value={category} onChange={(e) => setCategory(e.target.value)}>
-                    <option value="行銷">行銷</option>
-                    <option value="團購">團購</option>
-                    <option value="育兒">育兒</option>
-                    <option value="信仰">信仰</option>
+                    {currentSite?.slug === 'bible' ? (
+                      <>
+                        <option value="daily-devotion">🕊️ 每日靈修</option>
+                        <option value="bible-study">📖 經文解釋</option>
+                        <option value="faq">❓ 信仰問答</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="行銷">行銷</option>
+                        <option value="團購">團購</option>
+                        <option value="育兒">育兒</option>
+                      </>
+                    )}
                   </select>
                 </div>
                 <div className="form-group">
