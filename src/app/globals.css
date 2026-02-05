@@ -892,3 +892,50 @@ body {
   margin: 6px 0;
   line-height: 1.7;
 }
+
+/* ===== 以下加到 globals.css 最後面 ===== */
+
+.table-wrapper {
+  overflow-x: auto;
+  margin: 16px 0;
+}
+
+.preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  background: #fff;
+}
+
+.preview-table th {
+  background: #f8f0e8;
+  font-weight: 600;
+  text-align: left;
+  padding: 10px 14px;
+  border: 1px solid #e5d5c5;
+  color: #5a3e28;
+}
+
+.preview-table td {
+  padding: 10px 14px;
+  border: 1px solid #e8ddd3;
+  color: #444;
+}
+
+.preview-table tbody tr:nth-child(even) {
+  background: #faf8f6;
+}
+
+.preview-table tbody tr:hover {
+  background: #f5ede5;
+}
+
+.preview-ul {
+  padding-left: 24px;
+  margin: 12px 0;
+}
+
+.preview-li {
+  margin: 6px 0;
+  line-height: 1.7;
+}

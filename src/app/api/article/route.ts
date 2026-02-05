@@ -109,18 +109,15 @@ async function searchImages(query: string, siteSlug: string): Promise<ImageResul
   const prefix = getImagePrefix(siteSlug);
   const needAsian = ['bible', 'mommystartup', 'chparenting'].includes(siteSlug);
 
-  // 1. 加前綴搜 Pexels
   const prefixedQuery = prefix ? `${prefix} ${query}` : query;
   const result = await searchPexelsImages(prefixedQuery);
   if (result.candidates.length) return result;
 
-  // 2. 需要亞洲圖 → Freepik fallback
   if (needAsian) {
     const freepikResult = await searchFreepikImages(query);
     if (freepikResult.candidates.length) return freepikResult;
   }
 
-  // 3. 原始 query 再試
   if (prefix) {
     const fallbackResult = await searchPexelsImages(query);
     if (fallbackResult.candidates.length) return fallbackResult;
@@ -132,12 +129,99 @@ async function searchImages(query: string, siteSlug: string): Promise<ImageResul
 // ========== 主 API ==========
 export async function POST(request: NextRequest) {
   try {
-    const { title, category, length, siteSlug } = await request.json();
+    const { title, category, length, siteSlug, existingArticles, manualContent } = await request.json();
 
     const randomName = getRandomName();
     const isBible = siteSlug === 'bible' || siteSlug === 'bible-en' || category === '信仰';
 
-    // ====== System Prompt ======
+    // ====== 手動模式：用戶自己寫內容，只需 AI 配圖 ======
+    if (manualContent) {
+      // AI 分析文章內容，產生圖片關鍵字
+      const imagePrompt = `分析以下文章內容，為它產生 4 組圖片搜尋關鍵字。
+
+文章標題：${title}
+文章內容：
+${manualContent.slice(0, 2000)}
+
+請用以下 JSON 格式回覆（只回覆 JSON，不要其他內容）：
+
+\`\`\`json
+{
+  "imageKeywords": {
+    "cover": "5-8個英文單字描述封面場景",
+    "image1": "5-8個英文單字描述第一段重點場景",
+    "image2": "5-8個英文單字描述第二段重點場景",
+    "image3": "5-8個英文單字描述第三段重點場景"
+  }
+}
+\`\`\`
+
+圖片關鍵字規則：
+- 每組 5-8 個英文單字，描述具體可拍攝的場景
+- 4 組要描述完全不同的場景
+- 如果是親子/育兒主題：包含 mother、child、family 等
+- 如果是信仰主題：包含 christian、church、bible 等（不要回教元素）
+- 禁止使用 religion、spiritual、pray 等模糊詞彙`;
+
+      const imageCompletion = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: imagePrompt }],
+        temperature: 0.5,
+        max_tokens: 500,
+      });
+
+      const imageRaw = imageCompletion.choices[0].message.content || '';
+      let imageKeywords: Record<string, string> = {};
+
+      const jsonMatch = imageRaw.match(/```json\s*([\s\S]*?)```/);
+      if (jsonMatch) {
+        try {
+          const parsed = JSON.parse(jsonMatch[1]);
+          imageKeywords = parsed.imageKeywords || {};
+        } catch { }
+      }
+
+      // 搜圖
+      const imagePositions = ['cover', 'image1', 'image2', 'image3'];
+      const images: Record<string, any> = {};
+
+      await Promise.all(
+        imagePositions.map(async (pos) => {
+          const query = imageKeywords[pos];
+          if (query) {
+            images[pos] = await searchImages(query, siteSlug || '');
+          }
+        })
+      );
+
+      return NextResponse.json({
+        content: manualContent,
+        faq: [],
+        imageKeywords,
+        images,
+      });
+    }
+
+    // ====== AI 產文模式 ======
+
+    // 內部連結資料
+    let internalLinksPrompt = '';
+    if (existingArticles && existingArticles.length > 0) {
+      const articleList = existingArticles
+        .slice(0, 30)
+        .map((a: { title: string; url: string }) => `- [${a.title}](${a.url})`)
+        .join('\n');
+      internalLinksPrompt = `
+
+內部連結（非常重要）：
+以下是同網站已有的文章，請在文章中自然地插入 2-3 個內部連結，推薦讀者延伸閱讀：
+${articleList}
+- 連結用 Markdown 格式：[文章標題](URL)
+- 選擇與本文最相關的文章來連結
+- 自然融入段落中，例如「想了解更多可以參考[文章標題](URL)」`;
+    }
+
+    // System Prompt
     const systemPrompt = isBible
       ? `你是一位專業的基督教內容作者，擅長用故事性的方式撰寫聖經靈修與信仰文章。
 
@@ -169,7 +253,6 @@ export async function POST(request: NextRequest) {
 - 使用標準 Markdown 表格語法
 - 格式：第一行標題列，第二行 | --- | --- | 分隔線，之後是資料列
 - 每個 H2 段落至少一個表格來整理該段重點
-- 表格要有意義，不要為了加而加
 
 連結規範：
 - 加入 2-3 個外部連結到權威來源（如聖經公會、知名神學院、維基百科）
@@ -203,15 +286,14 @@ export async function POST(request: NextRequest) {
 表格規範：
 - 使用標準 Markdown 表格語法
 - 格式：第一行標題列，第二行 | --- | --- | 分隔線，之後是資料列
-- 每個 H2 段落至少一個表格來整理該段重點（例如：比較表、步驟表、分齡對照表）
-- 表格要有意義，不要為了加而加
+- 每個 H2 段落至少一個表格來整理該段重點
 
 連結規範：
 - 加入 2-3 個外部連結到權威來源（如衛福部、兒福聯盟、知名醫療網站、親子天下）
 - 連結用 Markdown 格式：[顯示文字](URL)
 - 外部連結要自然融入文章內容`;
 
-    // ====== User Prompt ======
+    // User Prompt
     const prompt = `請撰寫一篇關於「${title}」的深度文章。
 
 分類：${category}
@@ -228,6 +310,7 @@ export async function POST(request: NextRequest) {
 6. 每個 H2 段落內至少包含一個 Markdown 表格整理重點
 7. 文章中自然融入 2-3 個外部連結（權威來源，用 [文字](URL) 格式）
 ${isBible ? '8. 「## 相關經文」區塊（引用 2-3 段經文）\n9. 「## 實際應用」區塊' : '8. 結尾行動呼籲'}
+${internalLinksPrompt}
 
 Markdown 表格格式（務必嚴格遵守）：
 
@@ -241,7 +324,7 @@ Markdown 表格格式（務必嚴格遵守）：
 重要提醒：
 - 文章至少 2000 字，內容要充實有深度
 - 每個 H3 段落至少 150-200 字，不要只寫兩三句
-- 表格必須使用標準 Markdown 語法（| 和 --- 分隔線），不要用其他格式
+- 表格必須使用標準 Markdown 語法
 - 外部連結要連到真實存在的權威網站
 - 不要在結尾加 FAQ 區塊
 
@@ -250,10 +333,10 @@ Markdown 表格格式（務必嚴格遵守）：
 \`\`\`json
 {
   "imageKeywords": {
-    "cover": "5-8個英文單字描述封面場景，例如：asian mother reading picture book with toddler cozy bedroom",
-    "image1": "5-8個英文單字描述第一個H2段落的具體可拍攝場景",
-    "image2": "5-8個英文單字描述第二個H2段落的具體可拍攝場景",
-    "image3": "5-8個英文單字描述第三個H2段落的具體可拍攝場景"
+    "cover": "5-8個英文單字描述封面場景",
+    "image1": "5-8個英文單字描述第一個H2段落的具體場景",
+    "image2": "5-8個英文單字描述第二個H2段落的具體場景",
+    "image3": "5-8個英文單字描述第三個H2段落的具體場景"
   },
   "faq": [
     {"q": "問題1", "a": "答案1（50-80字）"},
@@ -265,14 +348,14 @@ Markdown 表格格式（務必嚴格遵守）：
 }
 \`\`\`
 
-圖片關鍵字非常重要的規則：
+圖片關鍵字規則：
 - 每組 5-8 個英文單字，描述具體可拍攝的場景
-- 4 組關鍵字要描述完全不同的場景
-- 如果是親子/育兒/教養主題：場景要包含 mother、child、family、toddler 等
-- 如果是信仰/聖經主題：場景必須包含 christian、church、bible、cross 等明確的基督教元素
+- 4 組要描述完全不同的場景
+- 親子/育兒主題：包含 mother、child、family、toddler 等
+- 信仰/聖經主題：必須包含 christian、church、bible、cross 等明確基督教元素
 - 禁止使用 religion、spiritual、pray（pray 單獨用容易搜到回教圖片）
-- 信仰主題的禱告場景請用 christian prayer church 而不是 prayer
-- 場景要具體視覺化，例如「asian mother and daughter reading bible together at wooden table」而不是「bible study」
+- 信仰主題禱告場景用 christian prayer church
+- 場景要具體視覺化
 
 直接輸出 Markdown + JSON，不要有其他說明。`;
 

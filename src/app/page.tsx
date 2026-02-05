@@ -50,6 +50,19 @@ interface Article {
   faq: Array<{ q: string; a: string }>;
   imageKeywords: Record<string, string>;
   images: ArticleImages;
+  siteId?: string;
+  siteSlug?: string;
+  siteName?: string;
+}
+
+// 多網站批量用
+interface BatchTitle {
+  title: string;
+  siteId: string;
+  category: string;
+  mode: 'ai' | 'manual';
+  manualContent: string;
+  checked: boolean;
 }
 
 const IMAGE_LABELS: Record<string, string> = {
@@ -59,17 +72,17 @@ const IMAGE_LABELS: Record<string, string> = {
   image3: '🖼️ 段落三配圖',
 };
 
+// ========== Markdown → HTML（含表格） ==========
 function markdownToHtml(md: string): string {
   let html = md;
 
-  // ===== 先處理表格（在其他轉換前） =====
+  // ===== 先處理表格 =====
   html = html.replace(
     /((?:^\|.+\|[ \t]*\n)+)/gm,
     (tableBlock: string) => {
       const rows = tableBlock.trim().split('\n').filter((r: string) => r.trim());
       if (rows.length < 2) return tableBlock;
 
-      // 檢查第二行是否為分隔線 | --- | --- |
       const isSeparator = /^\|[\s\-:|]+\|$/.test(rows[1].trim());
       if (!isSeparator) return tableBlock;
 
@@ -95,7 +108,7 @@ function markdownToHtml(md: string): string {
     }
   );
 
-  // H3 before H2 (order matters)
+  // H3 before H2
   html = html.replace(/^### (.+)$/gm, '<h3 class="preview-h3">$1</h3>');
   html = html.replace(/^## (.+)$/gm, '<h2 class="preview-h2">$1</h2>');
   html = html.replace(/^# (.+)$/gm, '<h1 class="preview-h1">$1</h1>');
@@ -109,11 +122,11 @@ function markdownToHtml(md: string): string {
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
   // Blockquote
   html = html.replace(/^> (.+)$/gm, '<blockquote class="preview-quote">$1</blockquote>');
-  // Unordered list items
+  // List items
   html = html.replace(/^- (.+)$/gm, '<li class="preview-li">$1</li>');
   // Horizontal rule
   html = html.replace(/^---$/gm, '<hr />');
-  // Paragraphs: split by double newline
+  // Paragraphs
   const blocks = html.split(/\n\n+/);
   html = blocks
     .map((block) => {
@@ -130,7 +143,6 @@ function markdownToHtml(md: string): string {
         trimmed.startsWith('<table') ||
         trimmed.startsWith('<li')
       ) {
-        // 把連續的 <li> 包在 <ul> 裡
         if (trimmed.startsWith('<li')) {
           return `<ul class="preview-ul">${trimmed}</ul>`;
         }
@@ -165,6 +177,9 @@ export default function Home() {
   const [currentSite, setCurrentSite] = useState<Site | null>(null);
   const [step, setStep] = useState(0);
 
+  // 模式：'single' = 單網站（原本流程）, 'multi' = 多網站批量
+  const [mode, setMode] = useState<'single' | 'multi'>('single');
+
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [titles, setTitles] = useState<Title[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
@@ -195,6 +210,13 @@ export default function Home() {
 
   // 每篇文章的 tab 狀態
   const [articleTabs, setArticleTabs] = useState<Record<number, 'preview' | 'markdown'>>({});
+
+  // ========== 多網站批量 ==========
+  const [batchTitles, setBatchTitles] = useState<BatchTitle[]>([]);
+  const [batchInput, setBatchInput] = useState('');
+
+  // 內部連結快取
+  const [siteArticlesCache, setSiteArticlesCache] = useState<Record<string, Array<{ title: string; slug: string; url: string }>>>({});
 
   useEffect(() => {
     checkAuth();
@@ -248,10 +270,12 @@ export default function Home() {
     setSites([]);
     setCurrentSite(null);
     setStep(0);
+    setMode('single');
   }
 
   function selectSite(site: Site) {
     setCurrentSite(site);
+    setMode('single');
     setCategory(site.slug === 'bible' ? 'daily-devotion' : '');
     setStep(2);
     setKeywords([]);
@@ -259,6 +283,34 @@ export default function Home() {
     setArticles([]);
   }
 
+  function enterMultiMode() {
+    setMode('multi');
+    setCurrentSite(null);
+    setBatchTitles([]);
+    setBatchInput('');
+    setArticles([]);
+    setStep(6);
+  }
+
+  // ========== 拉取網站現有文章（內部連結用） ==========
+  async function fetchSiteArticles(siteId: string): Promise<Array<{ title: string; slug: string; url: string }>> {
+    if (siteArticlesCache[siteId]) return siteArticlesCache[siteId];
+    try {
+      const res = await fetch('/api/articles/list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteId }),
+      });
+      const data = await res.json();
+      const articles = data.articles || [];
+      setSiteArticlesCache((prev) => ({ ...prev, [siteId]: articles }));
+      return articles;
+    } catch {
+      return [];
+    }
+  }
+
+  // ========== 單網站流程（原本的） ==========
   async function generateKeywords() {
     setLoading(true);
     setStatus({ type: 'info', message: 'AI 正在規劃關鍵字...' });
@@ -334,6 +386,11 @@ export default function Home() {
       extra: '3000字以上，內容要非常充實',
     };
 
+    // 拉取內部連結
+    let existingArticles: Array<{ title: string; slug: string; url: string }> = [];
+    if (currentSite?.id) {
+      existingArticles = await fetchSiteArticles(currentSite.id);
+    }
 
     const newArticles: Article[] = [];
 
@@ -350,12 +407,12 @@ export default function Home() {
             category,
             length: lengthGuide[articleLength],
             siteSlug: currentSite?.slug,
+            existingArticles,
           }),
         });
 
         const data = await res.json();
         if (res.ok) {
-          // 計算排程日期
           const startDate = new Date(scheduleStart);
           startDate.setDate(startDate.getDate() + i * scheduleInterval);
           const dateStr = startDate.toISOString().split('T')[0];
@@ -369,6 +426,9 @@ export default function Home() {
             faq: data.faq || [],
             imageKeywords: data.imageKeywords || {},
             images: data.images || {},
+            siteId: currentSite?.id,
+            siteSlug: currentSite?.slug,
+            siteName: currentSite?.name,
           });
         }
       } catch { }
@@ -384,6 +444,121 @@ export default function Home() {
     setStatus({ type: 'success', message: `成功產生 ${newArticles.length} 篇文章！` });
   }
 
+  // ========== 多網站批量 ==========
+  function parseBatchInput() {
+    const lines = batchInput.split('\n').filter((l) => l.trim());
+    const defaultSite = sites[0];
+    const newBatch: BatchTitle[] = lines.map((line) => ({
+      title: line.trim(),
+      siteId: defaultSite?.id || '',
+      category: '',
+      mode: 'ai',
+      manualContent: '',
+      checked: true,
+    }));
+    setBatchTitles(newBatch);
+  }
+
+  function updateBatchTitle(idx: number, field: keyof BatchTitle, value: any) {
+    setBatchTitles((prev) => {
+      const updated = [...prev];
+      updated[idx] = { ...updated[idx], [field]: value };
+      return updated;
+    });
+  }
+
+  async function startMultiBatchGenerate() {
+    const selected = batchTitles.filter((bt) => bt.checked);
+    if (selected.length === 0) {
+      setStatus({ type: 'error', message: '請先勾選要產生的標題' });
+      return;
+    }
+
+    setBatchRunning(true);
+    setBatchProgress({ current: 0, total: selected.length, title: '' });
+    setStep(4);
+    setArticles([]);
+
+    const lengthGuide: Record<string, string> = {
+      medium: '2000-2500字',
+      long: '2500-3000字',
+      extra: '3000字以上，內容要非常充實',
+    };
+
+    // 預先拉取各網站的內部連結
+    const uniqueSiteIds = [...new Set(selected.map((bt) => bt.siteId))];
+    const siteArticlesMap: Record<string, any[]> = {};
+    await Promise.all(
+      uniqueSiteIds.map(async (siteId) => {
+        siteArticlesMap[siteId] = await fetchSiteArticles(siteId);
+      })
+    );
+
+    const newArticles: Article[] = [];
+    const concurrency = 3;
+
+    // 分批並行（每次 3 篇）
+    for (let i = 0; i < selected.length; i += concurrency) {
+      const batch = selected.slice(i, i + concurrency);
+
+      const results = await Promise.allSettled(
+        batch.map(async (bt, batchIdx) => {
+          const globalIdx = i + batchIdx;
+          const site = sites.find((s) => s.id === bt.siteId);
+          setBatchProgress({ current: globalIdx + 1, total: selected.length, title: bt.title });
+
+          const res = await fetch('/api/article', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: bt.title,
+              category: bt.category,
+              length: lengthGuide[articleLength],
+              siteSlug: site?.slug || '',
+              existingArticles: siteArticlesMap[bt.siteId] || [],
+              manualContent: bt.mode === 'manual' ? bt.manualContent : undefined,
+            }),
+          });
+
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error);
+
+          const startDate = new Date(scheduleStart);
+          startDate.setDate(startDate.getDate() + globalIdx * scheduleInterval);
+
+          return {
+            title: bt.title,
+            content: data.content,
+            category: bt.category,
+            slug: generateSlug(bt.title),
+            scheduledDate: startDate.toISOString().split('T')[0],
+            faq: data.faq || [],
+            imageKeywords: data.imageKeywords || {},
+            images: data.images || {},
+            siteId: bt.siteId,
+            siteSlug: site?.slug,
+            siteName: site?.name,
+          } as Article;
+        })
+      );
+
+      results.forEach((r) => {
+        if (r.status === 'fulfilled') newArticles.push(r.value);
+      });
+
+      // 批次間等待
+      if (i + concurrency < selected.length) {
+        await new Promise((r) => setTimeout(r, 5000));
+      }
+    }
+
+    setArticles(newArticles);
+    setBatchRunning(false);
+    setStep(5);
+    setStatus({ type: 'success', message: `成功產生 ${newArticles.length} 篇文章！` });
+  }
+
+  // ========== 共用工具函數 ==========
   function generateSlug(title: string): string {
     return title
       .toLowerCase()
@@ -455,21 +630,22 @@ ${content}`;
     setStatus({ type: 'success', message: `已下載 ${articles.length} 篇文章` });
   }
 
+  // ========== 上傳（支援多網站） ==========
   async function uploadToGitHub() {
-    if (!currentSite?.github_repo) {
-      setStatus({ type: 'error', message: '此網站未設定 GitHub' });
-      return;
-    }
     setLoading(true);
     setStatus({ type: 'info', message: '推送到 GitHub...' });
     let successCount = 0;
+
     for (const article of articles) {
+      const targetSiteId = article.siteId || currentSite?.id;
+      if (!targetSiteId) continue;
+
       try {
         const res = await fetch('/api/upload/github', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            siteId: currentSite.id,
+            siteId: targetSiteId,
             filename: `${article.slug}.md`,
             content: generateMarkdown(article),
           }),
@@ -478,6 +654,7 @@ ${content}`;
         await new Promise((r) => setTimeout(r, 1000));
       } catch { }
     }
+
     setLoading(false);
     setStatus({
       type: successCount === articles.length ? 'success' : 'error',
@@ -495,7 +672,7 @@ ${content}`;
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            siteId: currentSite?.id,
+            siteId: article.siteId || currentSite?.id,
             article: {
               title: article.title,
               slug: article.slug,
@@ -561,8 +738,20 @@ ${content}`;
     }
   }
 
+  // ========== 按網站分組（多網站用） ==========
+  function getArticlesBySite(): Record<string, Article[]> {
+    const grouped: Record<string, Article[]> = {};
+    articles.forEach((a) => {
+      const key = a.siteName || currentSite?.name || '未分類';
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(a);
+    });
+    return grouped;
+  }
+
   // ========== RENDER ==========
 
+  // Step 0: Login
   if (step === 0) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
@@ -587,6 +776,7 @@ ${content}`;
     );
   }
 
+  // Step 1: 選擇網站
   if (step === 1) {
     return (
       <>
@@ -609,6 +799,15 @@ ${content}`;
                   <p>{site.slug}</p>
                 </div>
               ))}
+              {/* 多網站批量按鈕 */}
+              <div
+                className="site-card"
+                style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: '#fff', cursor: 'pointer' }}
+                onClick={enterMultiMode}
+              >
+                <h3 style={{ color: '#fff' }}>📦 多網站批量</h3>
+                <p style={{ color: 'rgba(255,255,255,0.8)' }}>同時為多個網站產文</p>
+              </div>
               {user?.role === 'admin' && (
                 <div className="site-card" style={{ border: '2px dashed var(--border)' }}>
                   <h3 style={{ color: 'var(--text-light)' }}>+ 新增網站</h3>
@@ -622,11 +821,193 @@ ${content}`;
     );
   }
 
+  // Step 6: 多網站批量
+  if (step === 6) {
+    return (
+      <>
+        <header className="header">
+          <div className="header-content">
+            <h1>📦 多網站批量產文</h1>
+            <div className="header-user">
+              <button className="btn btn-secondary btn-sm" onClick={() => setStep(1)}>← 回選擇</button>
+              <span>{user?.email}</span>
+              <button className="btn btn-secondary btn-sm" onClick={handleLogout}>登出</button>
+            </div>
+          </div>
+        </header>
+        <div className="container">
+          {status.message && <div className={`status status-${status.type}`}>{status.message}</div>}
+
+          {/* 輸入標題 */}
+          {batchTitles.length === 0 ? (
+            <div className="card">
+              <h3>✏️ 輸入標題（每行一個）</h3>
+              <textarea
+                rows={10}
+                value={batchInput}
+                onChange={(e) => setBatchInput(e.target.value)}
+                placeholder={`如何開始讀聖經？\n基督徒可以喝酒嗎？\n0-3歲繪本怎麼選？\n團購新手怎麼開團？`}
+                style={{ width: '100%', padding: 12, fontSize: 15, border: '1px solid #ddd', borderRadius: 8, fontFamily: 'inherit' }}
+              />
+              <div className="btn-group" style={{ marginTop: 15 }}>
+                <button className="btn btn-secondary" onClick={() => setStep(1)}>← 上一步</button>
+                <button
+                  className="btn btn-primary"
+                  onClick={parseBatchInput}
+                  disabled={!batchInput.trim()}
+                >
+                  確認標題 →
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* 標題分配表 */}
+              <div className="card">
+                <h3>📋 文章分配（{batchTitles.filter((bt) => bt.checked).length} / {batchTitles.length} 篇已勾選）</h3>
+                <p style={{ color: 'var(--text-light)', fontSize: 13, marginBottom: 15 }}>
+                  為每篇文章指定網站、分類、產文模式
+                </p>
+
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                    <thead>
+                      <tr style={{ background: '#f8f0e8' }}>
+                        <th style={{ padding: '10px 8px', textAlign: 'center', width: 40, border: '1px solid #e5d5c5' }}>✓</th>
+                        <th style={{ padding: '10px 8px', textAlign: 'left', border: '1px solid #e5d5c5' }}>標題</th>
+                        <th style={{ padding: '10px 8px', textAlign: 'left', width: 140, border: '1px solid #e5d5c5' }}>網站</th>
+                        <th style={{ padding: '10px 8px', textAlign: 'left', width: 120, border: '1px solid #e5d5c5' }}>分類</th>
+                        <th style={{ padding: '10px 8px', textAlign: 'center', width: 90, border: '1px solid #e5d5c5' }}>模式</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {batchTitles.map((bt, idx) => (
+                        <tr key={idx} style={{ background: bt.checked ? '#fff' : '#f5f5f5' }}>
+                          <td style={{ padding: '8px', textAlign: 'center', border: '1px solid #e8ddd3' }}>
+                            <input
+                              type="checkbox"
+                              checked={bt.checked}
+                              onChange={(e) => updateBatchTitle(idx, 'checked', e.target.checked)}
+                            />
+                          </td>
+                          <td style={{ padding: '8px', border: '1px solid #e8ddd3' }}>
+                            <input
+                              type="text"
+                              value={bt.title}
+                              onChange={(e) => updateBatchTitle(idx, 'title', e.target.value)}
+                              style={{ width: '100%', padding: '6px 8px', border: '1px solid #ddd', borderRadius: 4, fontSize: 14 }}
+                            />
+                          </td>
+                          <td style={{ padding: '8px', border: '1px solid #e8ddd3' }}>
+                            <select
+                              value={bt.siteId}
+                              onChange={(e) => updateBatchTitle(idx, 'siteId', e.target.value)}
+                              style={{ width: '100%', padding: '6px', borderRadius: 4, fontSize: 13 }}
+                            >
+                              {sites.map((site) => (
+                                <option key={site.id} value={site.id}>{site.name}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td style={{ padding: '8px', border: '1px solid #e8ddd3' }}>
+                            <input
+                              type="text"
+                              value={bt.category}
+                              onChange={(e) => updateBatchTitle(idx, 'category', e.target.value)}
+                              placeholder="分類"
+                              style={{ width: '100%', padding: '6px 8px', border: '1px solid #ddd', borderRadius: 4, fontSize: 13 }}
+                            />
+                          </td>
+                          <td style={{ padding: '8px', textAlign: 'center', border: '1px solid #e8ddd3' }}>
+                            <select
+                              value={bt.mode}
+                              onChange={(e) => updateBatchTitle(idx, 'mode', e.target.value)}
+                              style={{ padding: '6px', borderRadius: 4, fontSize: 13 }}
+                            >
+                              <option value="ai">🤖 AI</option>
+                              <option value="manual">✍️ 手寫</option>
+                            </select>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* 手寫內容區 */}
+                {batchTitles.some((bt) => bt.mode === 'manual' && bt.checked) && (
+                  <div style={{ marginTop: 20 }}>
+                    <h4 style={{ marginBottom: 10 }}>✍️ 手寫內容</h4>
+                    {batchTitles.map((bt, idx) => (
+                      bt.mode === 'manual' && bt.checked && (
+                        <div key={idx} style={{ marginBottom: 15, padding: 12, background: '#faf8f6', borderRadius: 8 }}>
+                          <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 14 }}>📝 {bt.title}</div>
+                          <textarea
+                            rows={8}
+                            value={bt.manualContent}
+                            onChange={(e) => updateBatchTitle(idx, 'manualContent', e.target.value)}
+                            placeholder="貼入你的文章內容（Markdown 格式）..."
+                            style={{ width: '100%', padding: 10, border: '1px solid #ddd', borderRadius: 6, fontFamily: 'monospace', fontSize: 13 }}
+                          />
+                        </div>
+                      )
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 設定 */}
+              <div className="card">
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>文章長度（AI 產文用）</label>
+                    <select value={articleLength} onChange={(e) => setArticleLength(e.target.value)}>
+                      <option value="medium">標準（2000-2500字）</option>
+                      <option value="long">長篇（2500-3000字）</option>
+                      <option value="extra">深度（3000字以上）</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="schedule-box">
+                  <h4>📅 排程發布</h4>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>開始日期</label>
+                      <input type="date" value={scheduleStart} onChange={(e) => setScheduleStart(e.target.value)} />
+                    </div>
+                    <div className="form-group">
+                      <label>每隔幾天發一篇</label>
+                      <select value={scheduleInterval} onChange={(e) => setScheduleInterval(Number(e.target.value))}>
+                        <option value={1}>每天 1 篇</option>
+                        <option value={2}>每 2 天 1 篇</option>
+                        <option value={3}>每 3 天 1 篇</option>
+                        <option value={7}>每週 1 篇</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="btn-group">
+                  <button className="btn btn-secondary" onClick={() => setBatchTitles([])}>← 重新輸入</button>
+                  <button className="btn btn-primary" onClick={startMultiBatchGenerate}>
+                    🚀 開始產生（{batchTitles.filter((bt) => bt.checked).length} 篇，並行 3 篇）
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  // ========== 主流程 Steps 2-5 ==========
   return (
     <>
       <header className="header">
         <div className="header-content">
-          <h1>🌸 {currentSite?.name}</h1>
+          <h1>🌸 {currentSite?.name || '多網站批量'}</h1>
           <div className="header-user">
             <button className="btn btn-secondary btn-sm" onClick={() => setStep(1)}>← 換網站</button>
             <span>{user?.email}</span>
@@ -742,7 +1123,6 @@ ${content}`;
                       <option value="medium">標準（2000-2500字）</option>
                       <option value="long">長篇（2500-3000字）</option>
                       <option value="extra">深度（3000字以上）</option>
-
                     </select>
                   </div>
                   <div className="form-group">
@@ -751,7 +1131,6 @@ ${content}`;
                   </div>
                 </div>
 
-                {/* 排程發布設定 */}
                 <div className="schedule-box">
                   <h4>📅 排程發布</h4>
                   <p className="schedule-desc">文章會自動分配未來日期，搭配每日自動部署，實現定時上線。</p>
@@ -790,7 +1169,7 @@ ${content}`;
           </div>
         )}
 
-        {/* Step 4 */}
+        {/* Step 4: Progress */}
         {step === 4 && (
           <div className="card">
             <h3>⏳ 產生中...（含圖片搜尋）</h3>
@@ -798,7 +1177,9 @@ ${content}`;
               <div className="progress-bar">
                 <div className="progress-fill" style={{ width: `${(batchProgress.current / batchProgress.total) * 100}%` }} />
               </div>
-              <p style={{ textAlign: 'center', marginTop: 10 }}>{batchProgress.current} / {batchProgress.total} - {batchProgress.title}</p>
+              <p style={{ textAlign: 'center', marginTop: 10 }}>
+                {batchProgress.current} / {batchProgress.total} - {batchProgress.title}
+              </p>
             </div>
             <button className="btn btn-danger" onClick={() => setBatchRunning(false)}>⏹️ 停止</button>
           </div>
@@ -809,6 +1190,16 @@ ${content}`;
           <>
             <div className="card">
               <h3>✅ 產生完成！共 {articles.length} 篇</h3>
+              {/* 多網站時顯示分組統計 */}
+              {mode === 'multi' && (
+                <div style={{ marginTop: 10, fontSize: 13, color: 'var(--text-light)' }}>
+                  {Object.entries(getArticlesBySite()).map(([siteName, arts]) => (
+                    <span key={siteName} style={{ marginRight: 15 }}>
+                      🏷️ {siteName}：{arts.length} 篇
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             {articles.map((article, articleIdx) => {
@@ -821,6 +1212,9 @@ ${content}`;
                   <div style={{ fontSize: 13, color: 'var(--text-light)', marginBottom: 15 }}>
                     📅 排程：<strong style={{ color: 'var(--primary-dark)' }}>{article.scheduledDate}</strong>
                     &nbsp;&nbsp;|&nbsp;&nbsp;📁 {article.category}
+                    {article.siteName && (
+                      <>&nbsp;&nbsp;|&nbsp;&nbsp;🏷️ {article.siteName}</>
+                    )}
                   </div>
 
                   {/* 圖片區 */}
@@ -854,10 +1248,9 @@ ${content}`;
                     </button>
                   </div>
 
-                  {/* 預覽模式 */}
+                  {/* 預覽 */}
                   {tab === 'preview' && (
                     <div className="article-preview-area">
-                      {/* TOC */}
                       {toc.length > 0 && (
                         <div className="preview-toc">
                           <div className="preview-toc-title">📑 目錄</div>
@@ -870,9 +1263,7 @@ ${content}`;
                           </ul>
                         </div>
                       )}
-                      {/* 文章內容 */}
                       <div className="preview-body" dangerouslySetInnerHTML={{ __html: markdownToHtml(article.content) }} />
-                      {/* FAQ */}
                       {article.faq.length > 0 && (
                         <div className="preview-faq">
                           <h2 className="preview-h2">❓ 常見問題 FAQ</h2>
@@ -887,7 +1278,7 @@ ${content}`;
                     </div>
                   )}
 
-                  {/* Markdown 編輯模式 */}
+                  {/* Markdown 編輯 */}
                   {tab === 'markdown' && (
                     <div className="article-editor-area">
                       <textarea
@@ -899,7 +1290,6 @@ ${content}`;
                     </div>
                   )}
 
-                  {/* 按鈕 */}
                   <div className="btn-group" style={{ marginTop: 15 }}>
                     <button className="btn btn-secondary btn-sm" onClick={() => downloadMarkdown(article)}>📥 下載 Markdown</button>
                   </div>
@@ -912,16 +1302,14 @@ ${content}`;
               <h3>📤 批量操作</h3>
               <div className="btn-group">
                 <button className="btn btn-primary" onClick={downloadAllMarkdown}>📥 下載全部 Markdown</button>
-                {currentSite?.github_repo && (
-                  <button className="btn btn-success" onClick={uploadToGitHub} disabled={loading}>
-                    {loading ? (<><span className="loading-spinner" /> 推送中...</>) : '🐙 推送到 GitHub'}
-                  </button>
-                )}
+                <button className="btn btn-success" onClick={uploadToGitHub} disabled={loading}>
+                  {loading ? (<><span className="loading-spinner" /> 推送中...</>) : '🐙 推送到 GitHub'}
+                </button>
                 <button className="btn btn-secondary" onClick={uploadToSupabase} disabled={loading}>🗄️ 存到 Supabase</button>
               </div>
             </div>
             <div className="btn-group">
-              <button className="btn btn-secondary" onClick={() => setStep(2)}>🔄 重新開始</button>
+              <button className="btn btn-secondary" onClick={() => { setStep(mode === 'multi' ? 6 : 2); setArticles([]); }}>🔄 重新開始</button>
             </div>
           </>
         )}
