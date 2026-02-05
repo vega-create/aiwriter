@@ -76,9 +76,9 @@ const SITE_COLORS = ['#D4A5A5', '#A5C4D4', '#B5D4A5', '#D4C4A5', '#C4A5D4', '#A5
 
 const SITE_CATEGORIES: Record<string, Array<{ value: string; label: string }>> = {
     bible: [
-        { value: 'daily-devotion', label: '🕊️ 每日靈修' },
-        { value: 'bible-study', label: '📖 經文解釋' },
-        { value: 'faq', label: '❓ 信仰問答' },
+        { value: '每日靈修', label: '🕊️ 每日靈修' },
+        { value: '經文解釋', label: '📖 經文解釋' },
+        { value: '信仰問答', label: '❓ 信仰問答' },
     ],
     mommystartup: [
         { value: 'marketing', label: '📣 行銷' },
@@ -297,7 +297,7 @@ export default function BatchPage() {
                 const res = await fetch('/api/keywords', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ category: config.category, count: config.kwCount }),
+                    body: JSON.stringify({ category: config.category, count: config.kwCount, siteSlug: config.siteSlug || site.slug }),
                 });
                 const data = await res.json();
                 if (data.keywords) {
