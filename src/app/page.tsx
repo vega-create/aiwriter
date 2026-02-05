@@ -648,7 +648,7 @@ ${content}`;
     );
   }
 
-  // Step 1: 選擇網站
+  // Step 1: 選擇模式
   if (step === 1) {
     return (
       <>
@@ -656,6 +656,56 @@ ${content}`;
           <div className="header-content">
             <h1>🌸 AI 產文系統</h1>
             <div className="header-user">
+              <span>{user?.email}</span>
+              <button className="btn btn-secondary btn-sm" onClick={handleLogout}>登出</button>
+            </div>
+          </div>
+        </header>
+        <div className="container">
+          {/* 模式選擇 */}
+          <div style={{ textAlign: 'center', marginBottom: 30 }}>
+            <h2 style={{ fontSize: 22, color: 'var(--text)', marginBottom: 8 }}>選擇產文模式</h2>
+            <p style={{ color: 'var(--text-light)', fontSize: 14 }}>單篇精準操作，或多站批量高效產出</p>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 24, maxWidth: 700, margin: '0 auto 40px' }}>
+            {/* 單網站 */}
+            <div
+              className="site-card"
+              style={{ padding: '35px 25px', cursor: 'pointer' }}
+              onClick={() => setStep(11)}
+            >
+              <div style={{ fontSize: 36, marginBottom: 12 }}>✍️</div>
+              <h3 style={{ marginBottom: 8 }}>單網站產文</h3>
+              <p style={{ fontSize: 13 }}>選一個網站，逐步產生關鍵字、標題、文章</p>
+            </div>
+
+            {/* 多網站批量 */}
+            <a href="/batch" style={{ textDecoration: 'none' }}>
+              <div
+                className="site-card"
+                style={{ padding: '35px 25px', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: '#fff' }}
+              >
+                <div style={{ fontSize: 36, marginBottom: 12 }}>📦</div>
+                <h3 style={{ color: '#fff', marginBottom: 8 }}>多網站批量</h3>
+                <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.8)' }}>同時為多個網站批量產文，並行處理</p>
+              </div>
+            </a>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // Step 11: 選擇單一網站
+  if (step === 11) {
+    return (
+      <>
+        <header className="header">
+          <div className="header-content">
+            <h1>🌸 AI 產文系統</h1>
+            <div className="header-user">
+              <button className="btn btn-secondary btn-sm" onClick={() => setStep(1)}>← 回首頁</button>
               <span>{user?.email}</span>
               <button className="btn btn-secondary btn-sm" onClick={handleLogout}>登出</button>
             </div>
@@ -671,16 +721,6 @@ ${content}`;
                   <p>{site.slug}</p>
                 </div>
               ))}
-              {/* 多網站批量 — 連到獨立頁面 */}
-              <a href="/batch" style={{ textDecoration: 'none' }}>
-                <div
-                  className="site-card"
-                  style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: '#fff' }}
-                >
-                  <h3 style={{ color: '#fff' }}>📦 多網站批量</h3>
-                  <p style={{ color: 'rgba(255,255,255,0.8)' }}>同時為多個網站產文</p>
-                </div>
-              </a>
               {user?.role === 'admin' && (
                 <div className="site-card" style={{ border: '2px dashed var(--border)' }}>
                   <h3 style={{ color: 'var(--text-light)' }}>+ 新增網站</h3>
@@ -701,7 +741,7 @@ ${content}`;
         <div className="header-content">
           <h1>🌸 {currentSite?.name || 'AI 產文系統'}</h1>
           <div className="header-user">
-            <button className="btn btn-secondary btn-sm" onClick={() => setStep(1)}>← 換網站</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => setStep(11)}>← 換網站</button>
             <span>{user?.email}</span>
             <button className="btn btn-secondary btn-sm" onClick={handleLogout}>登出</button>
           </div>

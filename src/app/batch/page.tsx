@@ -73,6 +73,19 @@ interface Article {
 
 const SITE_COLORS = ['#D4A5A5', '#A5C4D4', '#B5D4A5', '#D4C4A5', '#C4A5D4', '#A5D4C4'];
 
+const SITE_CATEGORIES: Record<string, Array<{ value: string; label: string }>> = {
+    bible: [
+        { value: 'daily-devotion', label: '🕊️ 每日靈修' },
+        { value: 'bible-study', label: '📖 經文解釋' },
+        { value: 'faq', label: '❓ 信仰問答' },
+    ],
+    mommystartup: [
+        { value: 'marketing', label: '📣 行銷' },
+        { value: 'group-buying', label: '🛒 團購' },
+        { value: 'parenting', label: '👶 育兒' },
+    ],
+};
+
 const IMAGE_LABELS: Record<string, string> = {
     cover: '📷 封面圖',
     image1: '🖼️ 段落一',
@@ -776,12 +789,15 @@ ${content}`;
                                         <div className="form-row">
                                             <div className="form-group" style={{ marginBottom: 0 }}>
                                                 <label>分類</label>
-                                                <input
-                                                    type="text"
+                                                <select
                                                     value={config.category}
                                                     onChange={(e) => updateSiteConfig(config.siteId, 'category', e.target.value)}
-                                                    placeholder="例如：育兒、團購、每日靈修"
-                                                />
+                                                >
+                                                    <option value="">-- 選擇分類 --</option>
+                                                    {(SITE_CATEGORIES[config.siteSlug] || []).map((cat) => (
+                                                        <option key={cat.value} value={cat.value}>{cat.label}</option>
+                                                    ))}
+                                                </select>
                                             </div>
                                             <div className="form-group" style={{ marginBottom: 0 }}>
                                                 <label>關鍵字數量</label>
@@ -937,12 +953,16 @@ ${content}`;
                                                             </select>
                                                         </td>
                                                         <td style={{ padding: 8, border: '1px solid #e8ddd3' }}>
-                                                            <input
-                                                                type="text"
+                                                            <select
                                                                 value={t.category}
                                                                 onChange={(e) => updateTitle(idx, 'category', e.target.value)}
-                                                                style={{ width: '100%', padding: '6px 8px', border: '1px solid #ddd', borderRadius: 4, fontSize: 13 }}
-                                                            />
+                                                                style={{ width: '100%', padding: 6, borderRadius: 4, fontSize: 13 }}
+                                                            >
+                                                                <option value="">--</option>
+                                                                {(SITE_CATEGORIES[t.siteSlug] || []).map((cat) => (
+                                                                    <option key={cat.value} value={cat.value}>{cat.label}</option>
+                                                                ))}
+                                                            </select>
                                                         </td>
                                                     </tr>
                                                 ))}
