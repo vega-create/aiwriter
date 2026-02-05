@@ -261,7 +261,7 @@ export default function Home() {
 
   async function selectSite(site: Site) {
     setCurrentSite(site);
-    setCategory(site.slug === 'bible' ? 'daily-devotion' : '');
+    setCategory(site.slug === 'bible' ? '每日靈修' : '');
     setStep(2);
     setKeywords([]);
     setTitles([]);
