@@ -1,10 +1,89 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// Parse inline bold/italic/links
+const parseInline = (TextRun: any, text: string): any[] => {
+    const runs: any[] = [];
+    const pattern = /(\*\*\*(.+?)\*\*\*|\*\*(.+?)\*\*|\*(.+?)\*|\[([^\]]+)\]\(([^)]+)\))/g;
+    let lastIndex = 0;
+    let match;
+
+    while ((match = pattern.exec(text)) !== null) {
+        if (match.index > lastIndex) {
+            runs.push(new TextRun({ text: text.slice(lastIndex, match.index) }));
+        }
+        if (match[2]) {
+            runs.push(new TextRun({ text: match[2], bold: true, italics: true }));
+        } else if (match[3]) {
+            runs.push(new TextRun({ text: match[3], bold: true }));
+        } else if (match[4]) {
+            runs.push(new TextRun({ text: match[4], italics: true }));
+        } else if (match[5] && match[6]) {
+            runs.push(new TextRun({ text: `${match[5]} (${match[6]})`, color: '0066CC' }));
+        }
+        lastIndex = pattern.lastIndex;
+    }
+
+    if (lastIndex < text.length) {
+        runs.push(new TextRun({ text: text.slice(lastIndex) }));
+    }
+    if (runs.length === 0) {
+        runs.push(new TextRun({ text }));
+    }
+    return runs;
+};
+
+// Parse markdown table to docx Table
+const makeTable = (docx: any, tableLines: string[]): any => {
+    if (tableLines.length < 3) return null;
+
+    const { Table, TableRow, TableCell, Paragraph, TextRun, WidthType, BorderStyle } = docx;
+
+    const parseRow = (row: string): string[] =>
+        row.split('|').slice(1, -1).map((cell: string) => cell.trim());
+
+    const headers = parseRow(tableLines[0]);
+    const dataRows = tableLines.slice(2).map(parseRow);
+
+    const border = { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' };
+    const borders = { top: border, bottom: border, left: border, right: border };
+    const colWidth = Math.floor(9000 / Math.max(headers.length, 1));
+
+    const headerRow = new TableRow({
+        children: headers.map(
+            (h: string) =>
+                new TableCell({
+                    children: [new Paragraph({ children: [new TextRun({ text: h, bold: true })] })],
+                    borders,
+                    shading: { fill: 'F0E8E0', type: 'clear' as any, color: 'auto' },
+                    width: { size: colWidth, type: WidthType.DXA },
+                })
+        ),
+    });
+
+    const bodyRows = dataRows.map(
+        (row: string[]) =>
+            new TableRow({
+                children: headers.map(
+                    (_: string, ci: number) =>
+                        new TableCell({
+                            children: [new Paragraph({ text: row[ci] || '' })],
+                            borders,
+                            width: { size: colWidth, type: WidthType.DXA },
+                        })
+                ),
+            })
+    );
+
+    return new Table({
+        rows: [headerRow, ...bodyRows],
+        width: { size: 9000, type: WidthType.DXA },
+    });
+};
+
 export async function POST(request: NextRequest) {
     try {
         const { title, markdown } = await request.json();
 
-        // Dynamic import to avoid build-time type issues
         const docx = await import('docx');
         const {
             Document,
@@ -13,11 +92,6 @@ export async function POST(request: NextRequest) {
             TextRun,
             HeadingLevel,
             AlignmentType,
-            Table,
-            TableRow,
-            TableCell,
-            WidthType,
-            BorderStyle,
         } = docx;
 
         // Parse frontmatter out
@@ -39,84 +113,6 @@ export async function POST(request: NextRequest) {
             })
         );
 
-        // Parse inline bold/italic
-        function parseInline(text: string): any[] {
-            const runs: any[] = [];
-            const pattern = /(\*\*\*(.+?)\*\*\*|\*\*(.+?)\*\*|\*(.+?)\*|\[([^\]]+)\]\(([^)]+)\))/g;
-            let lastIndex = 0;
-            let match;
-
-            while ((match = pattern.exec(text)) !== null) {
-                if (match.index > lastIndex) {
-                    runs.push(new TextRun({ text: text.slice(lastIndex, match.index) }));
-                }
-                if (match[2]) {
-                    runs.push(new TextRun({ text: match[2], bold: true, italics: true }));
-                } else if (match[3]) {
-                    runs.push(new TextRun({ text: match[3], bold: true }));
-                } else if (match[4]) {
-                    runs.push(new TextRun({ text: match[4], italics: true }));
-                } else if (match[5] && match[6]) {
-                    runs.push(new TextRun({ text: `${match[5]} (${match[6]})`, color: '0066CC' }));
-                }
-                lastIndex = pattern.lastIndex;
-            }
-
-            if (lastIndex < text.length) {
-                runs.push(new TextRun({ text: text.slice(lastIndex) }));
-            }
-            if (runs.length === 0) {
-                runs.push(new TextRun({ text }));
-            }
-            return runs;
-        }
-
-        // Parse markdown table
-        function makeTable(tableLines: string[]): any {
-            if (tableLines.length < 3) return null;
-
-            const parseRow = (row: string): string[] =>
-                row.split('|').slice(1, -1).map((cell) => cell.trim());
-
-            const headers = parseRow(tableLines[0]);
-            const dataRows = tableLines.slice(2).map(parseRow);
-
-            const border = { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' };
-            const borders = { top: border, bottom: border, left: border, right: border };
-            const colWidth = Math.floor(9000 / Math.max(headers.length, 1));
-
-            const headerRow = new TableRow({
-                children: headers.map(
-                    (h) =>
-                        new TableCell({
-                            children: [new Paragraph({ children: [new TextRun({ text: h, bold: true })] })],
-                            borders,
-                            shading: { fill: 'F0E8E0', type: 'clear' as any, color: 'auto' },
-                            width: { size: colWidth, type: WidthType.DXA },
-                        })
-                ),
-            });
-
-            const bodyRows = dataRows.map(
-                (row) =>
-                    new TableRow({
-                        children: headers.map(
-                            (_, ci) =>
-                                new TableCell({
-                                    children: [new Paragraph({ text: row[ci] || '' })],
-                                    borders,
-                                    width: { size: colWidth, type: WidthType.DXA },
-                                })
-                        ),
-                    })
-            );
-
-            return new Table({
-                rows: [headerRow, ...bodyRows],
-                width: { size: 9000, type: WidthType.DXA },
-            });
-        }
-
         let i = 0;
         while (i < lines.length) {
             const line = lines[i];
@@ -128,7 +124,7 @@ export async function POST(request: NextRequest) {
                     tableLines.push(lines[i]);
                     i++;
                 }
-                const table = makeTable(tableLines);
+                const table = makeTable(docx, tableLines);
                 if (table) children.push(table);
                 continue;
             }
@@ -169,7 +165,7 @@ export async function POST(request: NextRequest) {
             // Blockquote
             if (line.startsWith('> ')) {
                 children.push(new Paragraph({
-                    children: parseInline(line.replace(/^> /, '')),
+                    children: parseInline(TextRun, line.replace(/^> /, '')),
                     indent: { left: 720 },
                     spacing: { before: 100, after: 100 },
                 }));
@@ -180,7 +176,7 @@ export async function POST(request: NextRequest) {
             // List item
             if (line.startsWith('- ')) {
                 children.push(new Paragraph({
-                    children: parseInline(line.replace(/^- /, '')),
+                    children: parseInline(TextRun, line.replace(/^- /, '')),
                     bullet: { level: 0 },
                     spacing: { before: 50, after: 50 },
                 }));
@@ -188,26 +184,21 @@ export async function POST(request: NextRequest) {
                 continue;
             }
 
-            // Image → placeholder text
-            if (line.match(/^!\[([^\]]*)\]\(([^)]+)\)/)) {
-                const imgMatch = line.match(/^!\[([^\]]*)\]\(([^)]+)\)/);
-                if (imgMatch && imgMatch[1]) {
-                    children.push(new Paragraph({
-                        children: [new TextRun({ text: `[圖片: ${imgMatch[1]}]`, italics: true, color: '888888' })],
-                        spacing: { before: 100, after: 100 },
-                        alignment: AlignmentType.CENTER,
-                    }));
-                }
+            // Image → placeholder
+            const imgMatch = line.match(/^!\[([^\]]*)\]\(([^)]+)\)/);
+            if (imgMatch) {
+                children.push(new Paragraph({
+                    children: [new TextRun({ text: `[圖片: ${imgMatch[1]}]`, italics: true, color: '888888' })],
+                    spacing: { before: 100, after: 100 },
+                    alignment: AlignmentType.CENTER,
+                }));
                 i++;
                 continue;
             }
 
             // HR
             if (line.trim() === '---') {
-                children.push(new Paragraph({
-                    text: '',
-                    spacing: { before: 200, after: 200 },
-                }));
+                children.push(new Paragraph({ text: '', spacing: { before: 200, after: 200 } }));
                 i++;
                 continue;
             }
@@ -220,17 +211,14 @@ export async function POST(request: NextRequest) {
 
             // Regular paragraph
             children.push(new Paragraph({
-                children: parseInline(line),
+                children: parseInline(TextRun, line),
                 spacing: { before: 80, after: 80 },
             }));
             i++;
         }
 
         const doc = new Document({
-            sections: [{
-                properties: {},
-                children,
-            }],
+            sections: [{ properties: {}, children }],
         });
 
         const buffer = await Packer.toBuffer(doc);
