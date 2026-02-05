@@ -176,7 +176,7 @@ export default function Home() {
   const [status, setStatus] = useState({ type: '', message: '' });
 
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
-  const [category, setCategory] = useState('行銷');
+  const [category, setCategory] = useState('');
   const [kwCount, setKwCount] = useState(20);
   const [articleLength, setArticleLength] = useState('medium');
   const [batchDelay, setBatchDelay] = useState(30);
@@ -863,9 +863,9 @@ ${content}`;
                   <label>分類</label>
                   {currentSite?.slug === 'bible' ? (
                     <select value={category} onChange={(e) => setCategory(e.target.value)}>
-                      <option value="daily-devotion">🕊️ 每日靈修</option>
-                      <option value="bible-study">📖 經文解釋</option>
-                      <option value="faq">❓ 信仰問答</option>
+                      <option value="每日靈修">🕊️ 每日靈修</option>
+                      <option value="經文解釋">📖 經文解釋</option>
+                      <option value="信仰問答">❓ 信仰問答</option>
                     </select>
                   ) : (
                     <input type="text" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="輸入分類，例如：團購、育兒、行銷" />
