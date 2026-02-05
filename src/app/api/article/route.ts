@@ -339,9 +339,13 @@ ${existingArticles?.length > 0 ? '- 在正文中自然插入 2-4 個內部連結
     await Promise.all(
       positions.map(async (pos) => {
         let query = imageKeywords[pos] || title;
-        // Safety net: add "christian" for bible site to avoid Islamic imagery
+        // Add "christian" for bible site to avoid Islamic imagery
         if (siteSlug === 'bible' && !query.toLowerCase().includes('christian')) {
           query = `christian ${query}`;
+        }
+        // Add "asian" for all Chinese-language sites when people are involved
+        if (['bible', 'mommystartup'].includes(siteSlug) && !query.toLowerCase().includes('asian')) {
+          query = `asian ${query}`;
         }
         const candidates = await searchPexelsImages(query, 15);
         if (candidates.length > 0) {
