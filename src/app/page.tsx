@@ -53,6 +53,7 @@ interface Article {
   siteId?: string;
   siteSlug?: string;
   siteName?: string;
+  dbId?: string; // aw_articles.id from Supabase
 }
 
 const IMAGE_LABELS: Record<string, string> = {
@@ -201,6 +202,9 @@ export default function Home() {
   // 內部連結快取
   const [siteArticlesCache, setSiteArticlesCache] = useState<Record<string, Array<{ title: string; slug: string; url: string }>>>({});
 
+  // Supabase batch persistence
+  const [batchId, setBatchId] = useState<string | null>(null);
+
   useEffect(() => {
     checkAuth();
   }, []);
@@ -255,13 +259,23 @@ export default function Home() {
     setStep(0);
   }
 
-  function selectSite(site: Site) {
+  async function selectSite(site: Site) {
     setCurrentSite(site);
     setCategory(site.slug === 'bible' ? 'daily-devotion' : '');
     setStep(2);
     setKeywords([]);
     setTitles([]);
     setArticles([]);
+    // Create batch record
+    try {
+      const res = await fetch('/api/batch/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'single', siteIds: [site.id] }),
+      });
+      const data = await res.json();
+      if (res.ok) setBatchId(data.batch.id);
+    } catch { }
   }
 
   // ========== 拉取網站現有文章（內部連結用） ==========
@@ -296,6 +310,22 @@ export default function Home() {
       if (!res.ok) throw new Error(data.error);
       setKeywords(data.keywords);
       setStatus({ type: 'success', message: `成功產生 ${data.keywords.length} 個關鍵字！` });
+      // Save to Supabase
+      if (batchId) {
+        fetch('/api/batch/keywords', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            batchId,
+            keywords: data.keywords.map((kw: Keyword) => ({
+              keyword: kw.keyword,
+              difficulty: kw.difficulty,
+              siteId: currentSite?.id,
+              siteSlug: currentSite?.slug,
+            })),
+          }),
+        }).catch(() => { });
+      }
     } catch (err: any) {
       setStatus({ type: 'error', message: err.message });
     } finally {
@@ -312,18 +342,49 @@ export default function Home() {
       return;
     }
     setLoading(true);
-    setStatus({ type: 'info', message: 'AI 正在生成標題...' });
+    setStatus({ type: 'info', message: 'AI 正在生成標題（排除已有標題）...' });
     try {
+      // Fetch existing titles for dedup
+      let existingTitles: string[] = [];
+      if (currentSite?.id) {
+        try {
+          const etRes = await fetch('/api/batch/existing-titles', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ siteIds: [currentSite.id] }),
+          });
+          const etData = await etRes.json();
+          existingTitles = etData.existingTitles || [];
+        } catch { }
+      }
+
       const res = await fetch('/api/titles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keywords: selected.map((k) => k.keyword) }),
+        body: JSON.stringify({ keywords: selected.map((k) => k.keyword), existingTitles }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setTitles(data.titles);
       setStep(3);
       setStatus({ type: 'success', message: `成功生成 ${data.titles.length} 個標題！` });
+      // Save to Supabase
+      if (batchId) {
+        fetch('/api/batch/titles', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            batchId,
+            titles: data.titles.map((t: Title) => ({
+              keyword: t.keyword,
+              title: t.title,
+              siteId: currentSite?.id,
+              siteSlug: currentSite?.slug,
+              siteName: currentSite?.name,
+            })),
+          }),
+        }).catch(() => { });
+      }
     } catch (err: any) {
       setStatus({ type: 'error', message: err.message });
     } finally {
@@ -389,7 +450,7 @@ export default function Home() {
           startDate.setDate(startDate.getDate() + i * scheduleInterval);
           const dateStr = startDate.toISOString().split('T')[0];
 
-          newArticles.push({
+          const newArticle: Article = {
             title,
             content: data.content,
             category,
@@ -401,7 +462,23 @@ export default function Home() {
             siteId: currentSite?.id,
             siteSlug: currentSite?.slug,
             siteName: currentSite?.name,
-          });
+          };
+
+          // Save to Supabase
+          if (batchId) {
+            try {
+              const saveRes = await fetch('/api/batch/articles', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ batchId, article: newArticle }),
+              });
+              const saveData = await saveRes.json();
+              if (saveRes.ok) newArticle.dbId = saveData.article.id;
+            } catch { }
+          }
+
+          newArticles.push(newArticle);
+          setArticles([...newArticles]);
         }
       } catch { }
 
@@ -535,6 +612,14 @@ ${content}`;
         });
         if (res.ok) successCount++;
         await new Promise((r) => setTimeout(r, 1000));
+        // Mark pushed in Supabase
+        if (res.ok && article.dbId) {
+          fetch(`/api/batch/articles/${article.dbId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ githubPushed: true, status: 'published' }),
+          }).catch(() => { });
+        }
       } catch { }
     }
 
@@ -690,6 +775,13 @@ ${content}`;
                 <h3 style={{ color: '#fff', marginBottom: 8 }}>多網站批量</h3>
                 <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.8)' }}>同時為多個網站批量產文，並行處理</p>
               </div>
+            </a>
+          </div>
+
+          {/* 文章管理入口 */}
+          <div style={{ textAlign: 'center' }}>
+            <a href="/manage" style={{ color: 'var(--primary-dark)', fontSize: 14, textDecoration: 'none' }}>
+              📋 文章管理 — 查看歷史批次與文章狀態 →
             </a>
           </div>
         </div>

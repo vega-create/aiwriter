@@ -1,363 +1,229 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { createClient } from '@supabase/supabase-js';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
 const PEXELS_API_KEY = process.env.PEXELS_API_KEY;
-const FREEPIK_API_KEY = process.env.FREEPIK_API_KEY;
 
-// 台灣常見名字列表（每次隨機選一個）
-const TW_NAMES = [
-  '志豪', '怡君', '建宏', '淑芬', '俊傑', '雅琪', '宗翰', '佳穎',
-  '柏翰', '詩涵', '冠廷', '欣怡', '家豪', '雅雯', '承恩', '筱婷',
-  '宏仁', '美玲', '彥廷', '思妤', '育誠', '佩珊', '哲瑋', '曉萱',
-  '信宏', '惠婷', '威廷', '雅芳', '嘉豪', '靜宜',
+// Supabase client
+const supabaseUrl = process.env.SUPABASE_URL!;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY!;
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+interface ExistingArticle {
+  title: string;
+  slug: string;
+  url: string;
+}
+
+// Random name pool - categorized to avoid repetition
+const FEMALE_NAMES = [
+  '雅琪', '佩珊', '怡君', '婉如', '淑芬', '詩涵', '筱婷', '佳穎',
+  '欣怡', '雅雯', '芷瑄', '宜蓁', '品妤', '羽彤', '思妤', '子晴',
+  '沛蓉', '映彤', '亭瑤', '芸安', '靜宜', '惠如', '雅萍', '秀娟',
+  '玉華', '麗君', '慧玲', '美玲', '素梅', '淑惠', '雅婷', '韻如',
+];
+const MALE_NAMES = [
+  '志豪', '家豪', '建宏', '俊傑', '宗翰', '柏翰', '冠廷', '承恩',
+  '彥廷', '宥辰', '晨皓', '柏睿', '翊安', '品叡', '宇恆', '紹恩',
+  '國華', '明哲', '文彬', '信宏', '啟明', '振宇', '嘉偉', '育誠',
+  '泓毅', '哲瑋', '庭瑋', '睿杰', '晉豪', '威廷', '峻維', '聖恩',
 ];
 
-function getRandomName(): string {
-  return TW_NAMES[Math.floor(Math.random() * TW_NAMES.length)];
+// Pick random non-repeating names
+function getRandomNames(count: number = 3): string {
+  const shuffledF = [...FEMALE_NAMES].sort(() => Math.random() - 0.5);
+  const shuffledM = [...MALE_NAMES].sort(() => Math.random() - 0.5);
+  const picked: string[] = [];
+  for (let i = 0; i < count; i++) {
+    picked.push(i % 2 === 0 ? shuffledF[i] : shuffledM[i]);
+  }
+  return picked.join('、');
 }
 
-type ImageCandidate = {
-  url: string;
-  thumbnail: string;
-  alt: string;
-  photographer: string;
-};
-
-type ImageResult = {
-  selected: ImageCandidate;
-  candidates: ImageCandidate[];
-  source?: string;
-};
-
-const EMPTY_RESULT: ImageResult = {
-  selected: { url: '', thumbnail: '', alt: '', photographer: '' },
-  candidates: [],
-  source: 'none',
-};
-
-// ========== Pexels 搜圖 ==========
-async function searchPexelsImages(query: string): Promise<ImageResult> {
-  if (!PEXELS_API_KEY) return { ...EMPTY_RESULT };
-  try {
-    const response = await fetch(
-      `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=20`,
-      { headers: { Authorization: PEXELS_API_KEY } }
-    );
-    const data = await response.json();
-    if (!data.photos?.length) return { ...EMPTY_RESULT };
-    const candidates = data.photos.map((photo: any) => ({
-      url: photo.src.large2x,
-      thumbnail: photo.src.medium,
-      alt: photo.alt || query,
-      photographer: photo.photographer,
-    }));
-    const randomIndex = Math.floor(Math.random() * candidates.length);
-    return { selected: candidates[randomIndex], candidates, source: 'pexels' };
-  } catch {
-    return { ...EMPTY_RESULT };
-  }
-}
-
-// ========== Freepik 搜圖（備用） ==========
-async function searchFreepikImages(query: string): Promise<ImageResult> {
-  if (!FREEPIK_API_KEY) return { ...EMPTY_RESULT };
-  try {
-    const response = await fetch(
-      `https://api.freepik.com/v1/resources?locale=zh-TW&page=1&limit=20&term=${encodeURIComponent(query)}`,
-      {
-        headers: {
-          'x-freepik-api-key': FREEPIK_API_KEY,
-          'Accept-Language': 'zh-TW',
-        },
-      }
-    );
-    const data = await response.json();
-    if (!data.data?.length) return { ...EMPTY_RESULT };
-    const candidates = data.data
-      .map((item: any) => ({
-        url: item.image?.source_url || item.url || '',
-        thumbnail: item.image?.source_url || item.url || '',
-        alt: item.title || query,
-        photographer: 'Freepik',
-      }))
-      .filter((c: ImageCandidate) => c.url);
-    if (!candidates.length) return { ...EMPTY_RESULT };
-    const randomIndex = Math.floor(Math.random() * candidates.length);
-    return { selected: candidates[randomIndex], candidates, source: 'freepik' };
-  } catch {
-    return { ...EMPTY_RESULT };
-  }
-}
-
-// ========== 根據網站決定圖片搜尋前綴 ==========
-function getImagePrefix(siteSlug: string): string {
-  switch (siteSlug) {
-    case 'bible': return 'christian asian';
-    case 'bible-en': return 'christian';
-    case 'mommystartup':
-    case 'chparenting': return 'asian';
-    default: return '';
-  }
-}
-
-// ========== 智慧搜圖（三層 fallback） ==========
-async function searchImages(query: string, siteSlug: string): Promise<ImageResult> {
-  const prefix = getImagePrefix(siteSlug);
-  const needAsian = ['bible', 'mommystartup', 'chparenting'].includes(siteSlug);
-
-  const prefixedQuery = prefix ? `${prefix} ${query}` : query;
-  const result = await searchPexelsImages(prefixedQuery);
-  if (result.candidates.length) return result;
-
-  if (needAsian) {
-    const freepikResult = await searchFreepikImages(query);
-    if (freepikResult.candidates.length) return freepikResult;
-  }
-
-  if (prefix) {
-    const fallbackResult = await searchPexelsImages(query);
-    if (fallbackResult.candidates.length) return fallbackResult;
-  }
-
-  return { ...EMPTY_RESULT };
-}
-
-// ========== 主 API ==========
-export async function POST(request: NextRequest) {
-  try {
-    const { title, category, length, siteSlug, existingArticles, manualContent } = await request.json();
-
-    const randomName = getRandomName();
-    const isBible = siteSlug === 'bible' || siteSlug === 'bible-en' || category === '信仰';
-
-    // ====== 手動模式：用戶自己寫內容，只需 AI 配圖 ======
-    if (manualContent) {
-      // AI 分析文章內容，產生圖片關鍵字
-      const imagePrompt = `分析以下文章內容，為它產生 4 組圖片搜尋關鍵字。
-
-文章標題：${title}
-文章內容：
-${manualContent.slice(0, 2000)}
-
-請用以下 JSON 格式回覆（只回覆 JSON，不要其他內容）：
-
-\`\`\`json
-{
-  "imageKeywords": {
-    "cover": "5-8個英文單字描述封面場景",
-    "image1": "5-8個英文單字描述第一段重點場景",
-    "image2": "5-8個英文單字描述第二段重點場景",
-    "image3": "5-8個英文單字描述第三段重點場景"
-  }
-}
-\`\`\`
-
-圖片關鍵字規則：
-- 每組 5-8 個英文單字，描述具體可拍攝的場景
-- 4 組要描述完全不同的場景
-- 如果是親子/育兒主題：包含 mother、child、family 等
-- 如果是信仰主題：包含 christian、church、bible 等（不要回教元素）
-- 禁止使用 religion、spiritual、pray 等模糊詞彙`;
-
-      const imageCompletion = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: imagePrompt }],
-        temperature: 0.5,
-        max_tokens: 500,
-      });
-
-      const imageRaw = imageCompletion.choices[0].message.content || '';
-      let imageKeywords: Record<string, string> = {};
-
-      const jsonMatch = imageRaw.match(/```json\s*([\s\S]*?)```/);
-      if (jsonMatch) {
-        try {
-          const parsed = JSON.parse(jsonMatch[1]);
-          imageKeywords = parsed.imageKeywords || {};
-        } catch { }
-      }
-
-      // 搜圖
-      const imagePositions = ['cover', 'image1', 'image2', 'image3'];
-      const images: Record<string, any> = {};
-
-      await Promise.all(
-        imagePositions.map(async (pos) => {
-          const query = imageKeywords[pos];
-          if (query) {
-            images[pos] = await searchImages(query, siteSlug || '');
-          }
-        })
-      );
-
-      return NextResponse.json({
-        content: manualContent,
-        faq: [],
-        imageKeywords,
-        images,
-      });
-    }
-
-    // ====== AI 產文模式 ======
-
-    // 內部連結資料
-    let internalLinksPrompt = '';
-    if (existingArticles && existingArticles.length > 0) {
-      const articleList = existingArticles
-        .slice(0, 30)
-        .map((a: { title: string; url: string }) => `- [${a.title}](${a.url})`)
-        .join('\n');
-      internalLinksPrompt = `
-
-內部連結（非常重要）：
-以下是同網站已有的文章，請在文章中自然地插入 2-3 個內部連結，推薦讀者延伸閱讀：
-${articleList}
-- 連結用 Markdown 格式：[文章標題](URL)
-- 選擇與本文最相關的文章來連結
-- 自然融入段落中，例如「想了解更多可以參考[文章標題](URL)」`;
-    }
-
-    // System Prompt
-    const systemPrompt = isBible
-      ? `你是一位專業的基督教內容作者，擅長用故事性的方式撰寫聖經靈修與信仰文章。
+// Site-specific writing style
+const SITE_PROMPTS: Record<string, (names: string) => string> = {
+  bible: (names) => `你是一位溫暖的基督教內容寫手，專門為華人基督徒撰寫靈修與信仰文章。
 
 寫作風格：
-- 溫暖親切，帶有屬靈深度
+- 溫暖、鼓勵、充滿恩典
 - 使用繁體中文
-- 用故事或情境開頭，讓讀者產生共鳴
-- 包含聖經經文引用
-- 提供實際應用建議
-- 適當加入 Markdown 表格來整理重點資訊
+- 引用聖經經文支持論點（標注書卷章節）
+- 用生活故事或比喻帶入信仰真理
+- 語氣像牧者對弟兄姊妹說話
+- 故事中的人名請使用以下名字：${names}。絕對不要用英文名字，也不要用「小美」「小華」這類過於常見的名字`,
 
-人名規則：
-- 故事主角請使用「${randomName}」這個名字
-- 禁止使用「小明」「小華」「雅婷」「瑪莉亞」「約翰」「大衛」等常見或外國名字
-
-文章結構（嚴格遵守）：
-- H2 大標用中文數字：## 一、標題  ## 二、標題  ## 三、標題
-- H3 小標用阿拉伯數字：### 1. 標題  ### 2. 標題
-- 每個 H2 底下有 2-3 個 H3 小標
-- 開頭用故事帶入（100-150字）
-- 故事後一段精簡回答（粗體，50-80字）
-- 故事後加「看完這篇文章，您將了解：」的重點清單（3-4 點）
-- 3-4 個 H2 重點段落（每段至少包含一個 Markdown 表格整理重點）
-- 「## 相關經文」區塊（引用 2-3 段經文）
-- 「## 實際應用」區塊
-- 結尾不要加 FAQ（FAQ 會在 frontmatter 裡處理）
-
-表格規範：
-- 使用標準 Markdown 表格語法
-- 格式：第一行標題列，第二行 | --- | --- | 分隔線，之後是資料列
-- 每個 H2 段落至少一個表格來整理該段重點
-
-連結規範：
-- 加入 2-3 個外部連結到權威來源（如聖經公會、知名神學院、維基百科）
-- 連結用 Markdown 格式：[顯示文字](URL)
-- 外部連結要自然融入文章內容`
-      : `你是一位專業的內容寫手，專門為台灣的媽媽族群撰寫實用文章。
+  mommystartup: (names) => `你是一位專業的內容寫手，專門為台灣的媽媽族群撰寫實用文章。
 
 寫作風格：
 - 親切友善，像閨蜜聊天
 - 使用繁體中文
-- 段落分明，好閱讀
 - 包含實際案例或故事
 - 提供可行動的建議
-- 適當加入 Markdown 表格來整理重點資訊
+- 語氣溫暖但專業
+- 故事中的人名請使用以下名字：${names}。絕對不要用英文名字，也不要用「小美」「小華」這類過於常見的名字`,
 
-人名規則：
-- 故事主角請使用「${randomName}」這個名字
-- 禁止使用「小明」「小華」「雅婷」「瑪莉亞」「約翰」「大衛」等常見或外國名字
+  default: (names) => `你是一位專業的內容寫手，擅長撰寫 SEO 友好的高品質文章。
 
-文章結構（嚴格遵守）：
-- H2 大標用中文數字：## 一、標題  ## 二、標題  ## 三、標題
-- H3 小標用阿拉伯數字：### 1. 標題  ### 2. 標題
-- 每個 H2 底下有 2-3 個 H3 小標
-- 開頭用故事或情境帶入（100-150字）
-- 故事後加「看完這篇文章，您將了解：」的重點清單（3-4 點）
-- 3-5 個 H2 重點段落（每段至少包含一個 Markdown 表格整理重點）
-- 每段結尾有實用建議
-- 結尾有行動呼籲
-- 結尾不要加 FAQ（FAQ 會在 frontmatter 裡處理）
+寫作風格：
+- 專業但易讀
+- 使用繁體中文
+- 段落分明、結構清晰
+- 包含實際案例
+- 提供可行動的建議
+- 故事中的人名請使用以下名字：${names}。絕對不要用英文名字，也不要用「小美」「小華」這類過於常見的名字`,
+};
 
-表格規範：
-- 使用標準 Markdown 表格語法
-- 格式：第一行標題列，第二行 | --- | --- | 分隔線，之後是資料列
-- 每個 H2 段落至少一個表格來整理該段重點
+async function searchPexelsImages(query: string, count: number = 15): Promise<Array<{ url: string; thumbnail: string; alt: string; photographer: string }>> {
+  if (!PEXELS_API_KEY) return [];
+  try {
+    const keywords = query.replace(/[？！。，、]/g, ' ').trim().split(' ').slice(0, 3).join(' ');
+    const response = await fetch(
+      `https://api.pexels.com/v1/search?query=${encodeURIComponent(keywords)}&per_page=${count}`,
+      { headers: { Authorization: PEXELS_API_KEY } }
+    );
+    const data = await response.json();
+    return (data.photos || []).map((p: any) => ({
+      url: p.src?.large || '',
+      thumbnail: p.src?.medium || '',
+      alt: p.alt || query,
+      photographer: p.photographer || '',
+    }));
+  } catch {
+    return [];
+  }
+}
 
-連結規範：
-- 加入 2-3 個外部連結到權威來源（如衛福部、兒福聯盟、知名醫療網站、親子天下）
-- 連結用 Markdown 格式：[顯示文字](URL)
-- 外部連結要自然融入文章內容`;
+// Fetch external sources from Supabase for a given site
+async function getExternalSources(siteSlug: string, category: string): Promise<string> {
+  try {
+    const { data: site } = await supabase
+      .from('sites')
+      .select('external_sources')
+      .eq('slug', siteSlug)
+      .single();
 
-    // User Prompt
-    const prompt = `請撰寫一篇關於「${title}」的深度文章。
+    if (!site?.external_sources) return '';
+
+    const sources = site.external_sources;
+
+    // Collect relevant sources: match category + all other categories as fallback
+    let relevantSources: Array<{ name: string; url: string }> = [];
+
+    // First: try exact category match
+    for (const [cat, links] of Object.entries(sources)) {
+      if (category && cat.toLowerCase().includes(category.toLowerCase()) ||
+        category && category.toLowerCase().includes(cat.toLowerCase())) {
+        relevantSources.push(...(links as Array<{ name: string; url: string }>));
+      }
+    }
+
+    // If no exact match, use all sources
+    if (relevantSources.length === 0) {
+      for (const links of Object.values(sources)) {
+        relevantSources.push(...(links as Array<{ name: string; url: string }>));
+      }
+    }
+
+    if (relevantSources.length === 0) return '';
+
+    const sourceList = relevantSources
+      .map((s) => `- ${s.name}: https://${s.url}`)
+      .join('\n');
+
+    return `
+
+📌 外部連結來源清單（必須從以下清單中選擇 2-4 個）：
+⚠️ 只能使用以下清單中的網站作為外部連結，不要自己編造！
+${sourceList}
+
+請從上面的清單中選擇 2-4 個與文章主題最相關的網站，用 Markdown 格式 [適當的文字](URL) 自然融入文章中。`;
+  } catch {
+    return '';
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const { title, category, length, siteSlug, existingArticles } = await request.json();
+
+    // Generate random names for this article
+    const randomNames = getRandomNames(3);
+    const siteStyleFn = SITE_PROMPTS[siteSlug] || SITE_PROMPTS.default;
+    const siteStyle = siteStyleFn(randomNames);
+
+    // Fetch external sources from Supabase
+    const externalSourcesBlock = await getExternalSources(siteSlug, category);
+
+    // Build internal links instruction
+    let internalLinksBlock = '';
+    if (existingArticles && existingArticles.length > 0) {
+      const linkList = existingArticles
+        .slice(0, 30) // limit to avoid token overflow
+        .map((a: ExistingArticle) => `- [${a.title}](${a.url})`)
+        .join('\n');
+      internalLinksBlock = `
+
+📌 內部連結（必須使用）：
+以下是本站已有的文章清單，請在文章中自然地插入 2-4 個相關的內部連結。
+⚠️ 只能使用以下清單中的 URL，絕對不要自己編造連結！用 Markdown 格式 [適當的文字](URL) 融入段落中。
+
+${linkList}
+
+選擇與本文主題最相關的文章來連結。`;
+    }
+
+    // Build external links instruction for prompt
+    let externalLinksInstruction = '';
+    if (externalSourcesBlock) {
+      externalLinksInstruction = `- 在正文中自然插入 2-4 個外部連結（從上面提供的來源清單中選擇）`;
+    } else {
+      externalLinksInstruction = `- 在正文中自然插入 2-4 個外部連結（連到真實的權威網站，如維基百科、政府網站、知名媒體等）`;
+    }
+
+    const systemPrompt = `${siteStyle}
+
+重要 SEO 規範：
+- 文章必須包含 2-4 個外部連結，自然融入內容中
+- 外部連結用 Markdown 格式 [文字](URL)
+- 文章必須有故事性開頭，不要直接說教${externalSourcesBlock}${internalLinksBlock}`;
+
+    const prompt = `請撰寫一篇關於「${title}」的文章。
 
 分類：${category}
-目標字數：至少 2000 字（這很重要，內容要充實豐富，每個段落都要有足夠的說明和例子）
-故事主角名字：${randomName}
+字數要求：${length || '2000-2500字'}
 
-請用 Markdown 格式輸出文章內容（不含 frontmatter），包含：
+文章結構要求：
+1. 標題（# 格式，使用原標題）
+2. 故事性開頭 — 用一個具體的小故事或生活情境帶入（100-150字）
+3. 直接回答 — 簡要回答核心問題（50-80字）
+4. 3-5 個重點段落（## 格式），每段 200-350 字
+5. 實際應用 — 給讀者的行動建議
+6. 結語 — 總結 + 呼籲行動
 
-1. 直接用故事開頭（100-150字），不要加「開頭故事」或任何標題，直接寫故事內容，主角用「${randomName}」
-2. 故事後精簡回答（粗體），也不要加標題
-3. 「看完這篇文章，您將了解：」重點清單（3-4 點，用 - 列點）
-4. 3-4 個 H2 段落（用 ## 一、 ## 二、 ## 三、格式）
-5. 每個 H2 底下 2-3 個 H3 段落（用 ### 1. ### 2. 格式）
-6. 每個 H2 段落內至少包含一個 Markdown 表格整理重點
-7. 文章中自然融入 2-3 個外部連結（權威來源，用 [文字](URL) 格式）
-${isBible ? '8. 「## 相關經文」區塊（引用 2-3 段經文）\n9. 「## 實際應用」區塊' : '8. 結尾行動呼籲'}
-${internalLinksPrompt}
+連結要求：
+${externalLinksInstruction}
+${existingArticles?.length > 0 ? '- 在正文中自然插入 2-4 個內部連結（從上面提供的站內文章中選擇）' : ''}
 
-Markdown 表格格式（務必嚴格遵守）：
+最後請額外輸出：
+---FAQ_START---
+[
+  {"q": "問題1", "a": "回答1（50-80字）"},
+  {"q": "問題2", "a": "回答2（50-80字）"},
+  {"q": "問題3", "a": "回答3（50-80字）"}
+]
+---FAQ_END---
 
-| 項目 | 說明 | 建議 |
-| --- | --- | --- |
-| 內容1 | 說明1 | 建議1 |
-| 內容2 | 說明2 | 建議2 |
+---IMAGE_KEYWORDS_START---
+{"cover": "封面圖搜尋關鍵字（英文）", "image1": "段落一配圖關鍵字（英文）", "image2": "段落二配圖關鍵字（英文）", "image3": "段落三配圖關鍵字（英文）"}
+---IMAGE_KEYWORDS_END---
 
-注意：表格的每一行都必須以 | 開頭和結尾，第二行必須是 | --- | --- | 格式的分隔線。
+注意：IMAGE_KEYWORDS 的值請用英文關鍵字，並且如果圖片需要有人物，請加上 "asian" 關鍵字（例如 "asian mother cooking" 而不是 "mother cooking"）。
 
-重要提醒：
-- 文章至少 2000 字，內容要充實有深度
-- 每個 H3 段落至少 150-200 字，不要只寫兩三句
-- 表格必須使用標準 Markdown 語法
-- 外部連結要連到真實存在的權威網站
-- 不要在結尾加 FAQ 區塊
-
-同時，請在文章最後用以下 JSON 格式提供圖片關鍵字和 FAQ：
-
-\`\`\`json
-{
-  "imageKeywords": {
-    "cover": "5-8個英文單字描述封面場景",
-    "image1": "5-8個英文單字描述第一個H2段落的具體場景",
-    "image2": "5-8個英文單字描述第二個H2段落的具體場景",
-    "image3": "5-8個英文單字描述第三個H2段落的具體場景"
-  },
-  "faq": [
-    {"q": "問題1", "a": "答案1（50-80字）"},
-    {"q": "問題2", "a": "答案2（50-80字）"},
-    {"q": "問題3", "a": "答案3（50-80字）"},
-    {"q": "問題4", "a": "答案4（50-80字）"},
-    {"q": "問題5", "a": "答案5（50-80字）"}
-  ]
-}
-\`\`\`
-
-圖片關鍵字規則：
-- 每組 5-8 個英文單字，描述具體可拍攝的場景
-- 4 組要描述完全不同的場景
-- 親子/育兒主題：包含 mother、child、family、toddler 等
-- 信仰/聖經主題：必須包含 christian、church、bible、cross 等明確基督教元素
-- 禁止使用 religion、spiritual、pray（pray 單獨用容易搜到回教圖片）
-- 信仰主題禱告場景用 christian prayer church
-- 場景要具體視覺化
-
-直接輸出 Markdown + JSON，不要有其他說明。`;
+先輸出完整 Markdown 文章，再輸出 FAQ 和 IMAGE_KEYWORDS。`;
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -369,38 +235,52 @@ Markdown 表格格式（務必嚴格遵守）：
       max_tokens: 8000,
     });
 
-    const rawContent = completion.choices[0].message.content || '';
+    const raw = completion.choices[0].message.content || '';
 
-    // 解析文章內容和 JSON
-    let articleContent = rawContent;
-    let imageKeywords: Record<string, string> = {};
+    // Parse FAQ
     let faq: Array<{ q: string; a: string }> = [];
-
-    const jsonMatch = rawContent.match(/```json\s*([\s\S]*?)```/);
-    if (jsonMatch) {
+    const faqMatch = raw.match(/---FAQ_START---([\s\S]*?)---FAQ_END---/);
+    if (faqMatch) {
       try {
-        const parsed = JSON.parse(jsonMatch[1]);
-        imageKeywords = parsed.imageKeywords || {};
-        faq = parsed.faq || [];
+        const cleaned = faqMatch[1].replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        faq = JSON.parse(cleaned);
       } catch { }
-      articleContent = rawContent.replace(/```json[\s\S]*?```/, '').trim();
     }
 
-    // 搜圖（4 個位置並行）
-    const imagePositions = ['cover', 'image1', 'image2', 'image3'];
-    const images: Record<string, any> = {};
+    // Parse image keywords
+    let imageKeywords: Record<string, string> = {};
+    const imgMatch = raw.match(/---IMAGE_KEYWORDS_START---([\s\S]*?)---IMAGE_KEYWORDS_END---/);
+    if (imgMatch) {
+      try {
+        const cleaned = imgMatch[1].replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        imageKeywords = JSON.parse(cleaned);
+      } catch { }
+    }
+
+    // Extract article content (before FAQ markers)
+    let content = raw.split('---FAQ_START---')[0].trim();
+    // Remove trailing --- if present
+    content = content.replace(/\n---\s*$/, '').trim();
+
+    // Search images for each position
+    const images: Record<string, { selected: any; candidates: any[] }> = {};
+    const positions = ['cover', 'image1', 'image2', 'image3'];
 
     await Promise.all(
-      imagePositions.map(async (pos) => {
-        const query = imageKeywords[pos];
-        if (query) {
-          images[pos] = await searchImages(query, siteSlug || '');
+      positions.map(async (pos) => {
+        const query = imageKeywords[pos] || title;
+        const candidates = await searchPexelsImages(query, 15);
+        if (candidates.length > 0) {
+          images[pos] = {
+            selected: candidates[0],
+            candidates,
+          };
         }
       })
     );
 
     return NextResponse.json({
-      content: articleContent,
+      content,
       faq,
       imageKeywords,
       images,

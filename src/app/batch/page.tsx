@@ -69,6 +69,7 @@ interface Article {
     siteId: string;
     siteSlug: string;
     siteName: string;
+    dbId?: string;
 }
 
 const SITE_COLORS = ['#D4A5A5', '#A5C4D4', '#B5D4A5', '#D4C4A5', '#C4A5D4', '#A5D4C4'];
@@ -220,6 +221,9 @@ export default function BatchPage() {
     // Internal links cache
     const [siteArticlesCache, setSiteArticlesCache] = useState<Record<string, any[]>>({});
 
+    // Supabase batch persistence
+    const [batchId, setBatchId] = useState<string | null>(null);
+
     useEffect(() => {
         checkAuth();
     }, []);
@@ -314,6 +318,24 @@ export default function BatchPage() {
         setKwLoading(false);
         setStep(2);
         setStatus({ type: 'success', message: `成功產生 ${allKeywords.length} 個關鍵字！` });
+        // Create batch + save keywords
+        try {
+            const batchRes = await fetch('/api/batch/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode: 'batch', siteIds: siteConfigs.map((sc) => sc.siteId) }),
+            });
+            const batchData = await batchRes.json();
+            if (batchRes.ok) {
+                const newBatchId = batchData.batch.id;
+                setBatchId(newBatchId);
+                fetch('/api/batch/keywords', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ batchId: newBatchId, keywords: allKeywords }),
+                }).catch(() => { });
+            }
+        } catch { }
     }
 
     function toggleKeyword(idx: number) {
@@ -338,8 +360,21 @@ export default function BatchPage() {
             return;
         }
         setTitleLoading(true);
-        setStatus({ type: 'info', message: 'AI 正在生成標題...' });
+        setStatus({ type: 'info', message: 'AI 正在生成標題（排除已有標題）...' });
         setTitles([]);
+
+        // Fetch existing titles for dedup
+        const allSiteIds = Array.from(new Set(selectedKws.map((kw) => kw.siteId)));
+        let existingTitles: string[] = [];
+        try {
+            const etRes = await fetch('/api/batch/existing-titles', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ siteIds: allSiteIds }),
+            });
+            const etData = await etRes.json();
+            existingTitles = etData.existingTitles || [];
+        } catch { }
 
         // Group by site
         const grouped: Record<string, KeywordItem[]> = {};
@@ -355,7 +390,7 @@ export default function BatchPage() {
                 const res = await fetch('/api/titles', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ keywords: kws.map((k) => k.keyword) }),
+                    body: JSON.stringify({ keywords: kws.map((k) => k.keyword), existingTitles }),
                 });
                 const data = await res.json();
                 if (data.titles) {
@@ -378,6 +413,14 @@ export default function BatchPage() {
         setTitleLoading(false);
         setStep(3);
         setStatus({ type: 'success', message: `成功產生 ${allTitles.length} 個標題！` });
+        // Save titles to Supabase
+        if (batchId) {
+            fetch('/api/batch/titles', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ batchId, titles: allTitles }),
+            }).catch(() => { });
+        }
     }
 
     function skipToTitles() {
@@ -502,10 +545,25 @@ export default function BatchPage() {
                 })
             );
 
-            results.forEach((r) => {
-                if (r.status === 'fulfilled') newArticles.push(r.value);
+            for (const r of results) {
+                if (r.status === 'fulfilled') {
+                    const art = r.value;
+                    // Save to Supabase
+                    if (batchId) {
+                        try {
+                            const saveRes = await fetch('/api/batch/articles', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ batchId, article: art }),
+                            });
+                            const saveData = await saveRes.json();
+                            if (saveRes.ok) art.dbId = saveData.article.id;
+                        } catch { }
+                    }
+                    newArticles.push(art);
+                }
                 if (r.status === 'rejected') console.error('Article generation failed:', r.reason);
-            });
+            }
 
             if (i + concurrency < selectedTitles.length) {
                 await new Promise((r) => setTimeout(r, 5000));
@@ -634,6 +692,14 @@ ${content}`;
                 });
                 if (res.ok) successCount++;
                 await new Promise((r) => setTimeout(r, 1000));
+                // Mark pushed in Supabase
+                if (res.ok && article.dbId) {
+                    fetch(`/api/batch/articles/${article.dbId}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ githubPushed: true, status: 'published' }),
+                    }).catch(() => { });
+                }
             } catch { }
         }
 

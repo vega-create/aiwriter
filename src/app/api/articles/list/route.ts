@@ -1,82 +1,63 @@
+// src/app/api/articles/list/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = process.env.SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY!;
+import { supabase } from '@/lib/supabase';
 
 export async function POST(request: NextRequest) {
   try {
     const { siteId } = await request.json();
+    if (!siteId) return NextResponse.json({ articles: [] });
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    const { data: site, error: siteError } = await supabase
+    // Get site info for domain
+    const { data: site } = await supabase
       .from('sites')
-      .select('*')
+      .select('slug, domain')
       .eq('id', siteId)
       .single();
 
-    if (siteError || !site) {
-      return NextResponse.json({ error: 'Site not found' }, { status: 404 });
-    }
+    const allArticles: Array<{ title: string; slug: string; url: string }> = [];
+    const seenSlugs = new Set<string>();
 
-    const githubToken = process.env.GITHUB_TOKEN;
-    if (!site.github_repo || !githubToken) {
-      return NextResponse.json({ articles: [] });
-    }
+    // 1. From posts table (already published)
+    const { data: posts } = await supabase
+      .from('posts')
+      .select('title, slug')
+      .eq('site_id', siteId)
+      .order('created_at', { ascending: false })
+      .limit(200);
 
-    const dirPath = site.github_path || 'src/content/posts/';
-
-    // Fetch file list from GitHub
-    const response = await fetch(
-      `https://api.github.com/repos/${site.github_repo}/contents/${dirPath}`,
-      {
-        headers: {
-          'Authorization': `token ${githubToken}`,
-          'Accept': 'application/vnd.github.v3+json',
-        },
+    (posts || []).forEach((p: any) => {
+      if (p.slug && !seenSlugs.has(p.slug)) {
+        seenSlugs.add(p.slug);
+        allArticles.push({
+          title: p.title,
+          slug: p.slug,
+          url: `/posts/${p.slug}`,
+        });
       }
-    );
+    });
 
-    if (!response.ok) {
-      return NextResponse.json({ articles: [] });
-    }
+    // 2. From aw_articles (AI Writer generated, pushed to GitHub)
+    const { data: awArticles } = await supabase
+      .from('aw_articles')
+      .select('title, slug')
+      .eq('site_id', siteId)
+      .eq('github_pushed', true)
+      .order('created_at', { ascending: false })
+      .limit(200);
 
-    const files = await response.json();
-    if (!Array.isArray(files)) {
-      return NextResponse.json({ articles: [] });
-    }
+    (awArticles || []).forEach((a: any) => {
+      if (a.slug && !seenSlugs.has(a.slug)) {
+        seenSlugs.add(a.slug);
+        allArticles.push({
+          title: a.title,
+          slug: a.slug,
+          url: `/posts/${a.slug}`,
+        });
+      }
+    });
 
-    // Extract titles from filenames (slug → readable)
-    // Also fetch a few files to get actual titles from frontmatter
-    const mdFiles = files.filter((f: any) => f.name.endsWith('.md'));
-
-    // For performance, only fetch frontmatter of latest 50 articles
-    const recentFiles = mdFiles.slice(-50);
-
-    const articles: Array<{ title: string; slug: string; url: string }> = [];
-
-    await Promise.all(
-      recentFiles.map(async (file: any) => {
-        try {
-          const fileRes = await fetch(file.download_url);
-          const content = await fileRes.text();
-
-          // Extract title from frontmatter
-          const titleMatch = content.match(/^title:\s*"?(.+?)"?\s*$/m);
-          if (titleMatch) {
-            const slug = file.name.replace('.md', '');
-            articles.push({
-              title: titleMatch[1],
-              slug,
-              url: `/posts/${encodeURIComponent(slug)}/`,
-            });
-          }
-        } catch { }
-      })
-    );
-
-    return NextResponse.json({ articles });
+    return NextResponse.json({ articles: allArticles });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ articles: [] });
   }
 }
