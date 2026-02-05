@@ -198,11 +198,20 @@ export async function POST(request: NextRequest) {
   try {
     const { title, category, length, siteSlug, existingArticles: providedArticles } = await request.json();
 
-    // If no articles provided by frontend, fetch from GitHub
-    let existingArticles = providedArticles;
-    if (!existingArticles || existingArticles.length === 0) {
-      existingArticles = await getExistingArticlesFromGitHub(siteSlug);
+    // Always fetch from GitHub for complete internal links
+    const githubArticles = await getExistingArticlesFromGitHub(siteSlug);
+
+    // Merge: GitHub articles + any frontend-provided articles (deduplicated)
+    const allArticles = [...githubArticles];
+    if (providedArticles && providedArticles.length > 0) {
+      const existingSlugs = new Set(allArticles.map((a: ExistingArticle) => a.slug));
+      for (const a of providedArticles) {
+        if (!existingSlugs.has(a.slug)) {
+          allArticles.push(a);
+        }
+      }
     }
+    const existingArticles = allArticles;
 
     // Generate random names for this article
     const randomNames = getRandomNames(3);
