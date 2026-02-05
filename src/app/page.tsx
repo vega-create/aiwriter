@@ -59,9 +59,42 @@ const IMAGE_LABELS: Record<string, string> = {
   image3: '🖼️ 段落三配圖',
 };
 
-// ========== Markdown → HTML ==========
 function markdownToHtml(md: string): string {
   let html = md;
+
+  // ===== 先處理表格（在其他轉換前） =====
+  html = html.replace(
+    /((?:^\|.+\|[ \t]*\n)+)/gm,
+    (tableBlock: string) => {
+      const rows = tableBlock.trim().split('\n').filter((r: string) => r.trim());
+      if (rows.length < 2) return tableBlock;
+
+      // 檢查第二行是否為分隔線 | --- | --- |
+      const isSeparator = /^\|[\s\-:|]+\|$/.test(rows[1].trim());
+      if (!isSeparator) return tableBlock;
+
+      const parseRow = (row: string): string[] =>
+        row.split('|').slice(1, -1).map((cell: string) => cell.trim());
+
+      const headers = parseRow(rows[0]);
+      const dataRows = rows.slice(2);
+
+      let tableHtml = '<div class="table-wrapper"><table class="preview-table">';
+      tableHtml += '<thead><tr>';
+      headers.forEach((h: string) => { tableHtml += `<th>${h}</th>`; });
+      tableHtml += '</tr></thead>';
+      tableHtml += '<tbody>';
+      dataRows.forEach((row: string) => {
+        const cells = parseRow(row);
+        tableHtml += '<tr>';
+        cells.forEach((c: string) => { tableHtml += `<td>${c}</td>`; });
+        tableHtml += '</tr>';
+      });
+      tableHtml += '</tbody></table></div>';
+      return tableHtml;
+    }
+  );
+
   // H3 before H2 (order matters)
   html = html.replace(/^### (.+)$/gm, '<h3 class="preview-h3">$1</h3>');
   html = html.replace(/^## (.+)$/gm, '<h2 class="preview-h2">$1</h2>');
@@ -76,6 +109,8 @@ function markdownToHtml(md: string): string {
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
   // Blockquote
   html = html.replace(/^> (.+)$/gm, '<blockquote class="preview-quote">$1</blockquote>');
+  // Unordered list items
+  html = html.replace(/^- (.+)$/gm, '<li class="preview-li">$1</li>');
   // Horizontal rule
   html = html.replace(/^---$/gm, '<hr />');
   // Paragraphs: split by double newline
@@ -90,8 +125,15 @@ function markdownToHtml(md: string): string {
         trimmed.startsWith('<blockquote') ||
         trimmed.startsWith('<hr') ||
         trimmed.startsWith('<ul') ||
-        trimmed.startsWith('<ol')
+        trimmed.startsWith('<ol') ||
+        trimmed.startsWith('<div class="table-wrapper"') ||
+        trimmed.startsWith('<table') ||
+        trimmed.startsWith('<li')
       ) {
+        // 把連續的 <li> 包在 <ul> 裡
+        if (trimmed.startsWith('<li')) {
+          return `<ul class="preview-ul">${trimmed}</ul>`;
+        }
         return trimmed;
       }
       return `<p>${trimmed.replace(/\n/g, '<br />')}</p>`;
@@ -287,10 +329,11 @@ export default function Home() {
     setArticles([]);
 
     const lengthGuide: Record<string, string> = {
-      short: '800-1000字',
-      medium: '1500-2000字',
+      medium: '2000-2500字',
       long: '2500-3000字',
+      extra: '3000字以上，內容要非常充實',
     };
+
 
     const newArticles: Article[] = [];
 
@@ -696,9 +739,10 @@ ${content}`;
                   <div className="form-group">
                     <label>文章長度</label>
                     <select value={articleLength} onChange={(e) => setArticleLength(e.target.value)}>
-                      <option value="short">短（800-1000字）</option>
-                      <option value="medium">中（1500-2000字）</option>
-                      <option value="long">長（2500-3000字）</option>
+                      <option value="medium">標準（2000-2500字）</option>
+                      <option value="long">長篇（2500-3000字）</option>
+                      <option value="extra">深度（3000字以上）</option>
+
                     </select>
                   </div>
                   <div className="form-group">
