@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 // ========== Types ==========
 interface Site {
@@ -198,6 +198,7 @@ export default function BatchPage() {
     const [articleLength, setArticleLength] = useState('medium');
     const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, title: '' });
     const [batchRunning, setBatchRunning] = useState(false);
+    const batchRunningRef = useRef(false);
 
     // Schedule
     const [scheduleStart, setScheduleStart] = useState(() => {
@@ -435,6 +436,7 @@ export default function BatchPage() {
         }
 
         setBatchRunning(true);
+        batchRunningRef.current = true;
         setBatchProgress({ current: 0, total: selectedTitles.length, title: '' });
         setStep(4);
         setArticles([]);
@@ -458,7 +460,7 @@ export default function BatchPage() {
         const concurrency = 3;
 
         for (let i = 0; i < selectedTitles.length; i += concurrency) {
-            if (!batchRunning) break;
+            if (!batchRunningRef.current) break;
             const batch = selectedTitles.slice(i, i + concurrency);
 
             const results = await Promise.allSettled(
@@ -502,6 +504,7 @@ export default function BatchPage() {
 
             results.forEach((r) => {
                 if (r.status === 'fulfilled') newArticles.push(r.value);
+                if (r.status === 'rejected') console.error('Article generation failed:', r.reason);
             });
 
             if (i + concurrency < selectedTitles.length) {
@@ -511,6 +514,7 @@ export default function BatchPage() {
 
         setArticles(newArticles);
         setBatchRunning(false);
+        batchRunningRef.current = false;
         setStep(5);
         setStatus({ type: 'success', message: `成功產生 ${newArticles.length} 篇文章！` });
     }
@@ -1041,7 +1045,7 @@ ${content}`;
                                 {batchProgress.current} / {batchProgress.total} — {batchProgress.title}
                             </p>
                         </div>
-                        <button className="btn btn-danger" onClick={() => setBatchRunning(false)}>⏹️ 停止</button>
+                        <button className="btn btn-danger" onClick={() => { setBatchRunning(false); batchRunningRef.current = false; }}>⏹️ 停止</button>
                     </div>
                 )}
 
