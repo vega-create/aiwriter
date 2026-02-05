@@ -818,124 +818,150 @@ body {
   color: #1e40af;
 }
 
-/* ========== Schedule Box ========== */
-.schedule-box {
-  background: #f0f7ff;
-  border: 1px solid #c8ddf5;
+/* ========== Table Rendering ========== */
+.table-wrapper {
+  overflow-x: auto;
+  margin: 16px 0;
+}
+
+.preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  background: #fff;
+}
+
+.preview-table th {
+  background: #f8f0e8;
+  font-weight: 600;
+  text-align: left;
+  padding: 10px 14px;
+  border: 1px solid #e5d5c5;
+  color: #5a3e28;
+}
+
+.preview-table td {
+  padding: 10px 14px;
+  border: 1px solid #e8ddd3;
+  color: #444;
+}
+
+.preview-table tbody tr:nth-child(even) {
+  background: #faf8f6;
+}
+
+.preview-table tbody tr:hover {
+  background: #f5ede5;
+}
+
+.preview-ul {
+  padding-left: 24px;
+  margin: 12px 0;
+}
+
+.preview-li {
+  margin: 6px 0;
+  line-height: 1.7;
+}
+
+/* ========== Batch Page ========== */
+.batch-site-select {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.batch-site-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: var(--gray);
   border-radius: 12px;
-  padding: 20px;
-  margin-top: 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 2px solid transparent;
 }
 
-.schedule-box h4 {
+.batch-site-item:hover {
+  border-color: var(--primary-light);
+}
+
+.batch-site-item.selected {
+  border-color: var(--primary);
+  background: #fdf5f5;
+}
+
+.batch-site-item input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--primary);
+}
+
+.batch-site-config {
+  background: var(--gray);
+  border-radius: 12px;
+  padding: 18px;
+  margin-bottom: 12px;
+}
+
+.batch-site-config-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-weight: 600;
   font-size: 15px;
-  margin-bottom: 6px;
-  color: #2c5282;
+  color: var(--primary-dark);
 }
 
-.schedule-desc {
-  font-size: 13px;
-  color: #4a7ab5;
+.batch-site-tag {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--white);
+}
+
+.batch-kw-section {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px;
   margin-bottom: 15px;
 }
 
-.schedule-preview {
-  margin-top: 12px;
-  padding: 10px 14px;
-  background: #dbeafe;
+.batch-kw-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.batch-kw-section-title {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--primary-dark);
+}
+
+.batch-kw-count {
+  font-size: 12px;
+  color: var(--text-light);
+  background: var(--gray);
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+
+.batch-download-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.batch-download-group select {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 13px;
-  color: #1e40af;
-}
-
-.table-wrapper {
-  overflow-x: auto;
-  margin: 16px 0;
-}
-
-.preview-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
-  background: #fff;
-}
-
-.preview-table th {
-  background: #f8f0e8;
-  font-weight: 600;
-  text-align: left;
-  padding: 10px 14px;
-  border: 1px solid #e5d5c5;
-  color: #5a3e28;
-}
-
-.preview-table td {
-  padding: 10px 14px;
-  border: 1px solid #e8ddd3;
-  color: #444;
-}
-
-.preview-table tbody tr:nth-child(even) {
-  background: #faf8f6;
-}
-
-.preview-table tbody tr:hover {
-  background: #f5ede5;
-}
-
-.preview-ul {
-  padding-left: 24px;
-  margin: 12px 0;
-}
-
-.preview-li {
-  margin: 6px 0;
-  line-height: 1.7;
-}
-
-/* ===== 以下加到 globals.css 最後面 ===== */
-
-.table-wrapper {
-  overflow-x: auto;
-  margin: 16px 0;
-}
-
-.preview-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
-  background: #fff;
-}
-
-.preview-table th {
-  background: #f8f0e8;
-  font-weight: 600;
-  text-align: left;
-  padding: 10px 14px;
-  border: 1px solid #e5d5c5;
-  color: #5a3e28;
-}
-
-.preview-table td {
-  padding: 10px 14px;
-  border: 1px solid #e8ddd3;
-  color: #444;
-}
-
-.preview-table tbody tr:nth-child(even) {
-  background: #faf8f6;
-}
-
-.preview-table tbody tr:hover {
-  background: #f5ede5;
-}
-
-.preview-ul {
-  padding-left: 24px;
-  margin: 12px 0;
-}
-
-.preview-li {
-  margin: 6px 0;
-  line-height: 1.7;
 }
