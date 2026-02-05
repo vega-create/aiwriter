@@ -297,7 +297,7 @@ export default function BatchPage() {
                 const res = await fetch('/api/keywords', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ category: config.category, count: config.kwCount, siteSlug: config.siteSlug || site.slug }),
+                    body: JSON.stringify({ category: config.category, count: config.kwCount, siteSlug: config.siteSlug }),
                 });
                 const data = await res.json();
                 if (data.keywords) {
