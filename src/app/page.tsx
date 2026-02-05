@@ -486,7 +486,7 @@ export default function Home() {
     };
 
     // 預先拉取各網站的內部連結
-    const uniqueSiteIds = [...new Set(selected.map((bt) => bt.siteId))];
+    const uniqueSiteIds = Array.from(new Set(selected.map((bt) => bt.siteId)));
     const siteArticlesMap: Record<string, any[]> = {};
     await Promise.all(
       uniqueSiteIds.map(async (siteId) => {
