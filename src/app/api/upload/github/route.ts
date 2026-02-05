@@ -26,22 +26,31 @@ export async function POST(request: NextRequest) {
     }
 
     const filePath = `${site.github_path || 'src/content/posts/'}${filename}`;
+    const apiUrl = `https://api.github.com/repos/${site.github_repo}/contents/${filePath}`;
+
+    // 檢查檔案是否已存在（取得 sha）
+    let sha: string | undefined;
+    const checkRes = await fetch(apiUrl, {
+      headers: { 'Authorization': `token ${githubToken}` }
+    });
+    if (checkRes.ok) {
+      const existing = await checkRes.json();
+      sha = existing.sha;
+    }
 
     // Upload to GitHub
-    const response = await fetch(
-      `https://api.github.com/repos/${site.github_repo}/contents/${filePath}`,
-      {
-        method: 'PUT',
-        headers: {
-          'Authorization': `token ${githubToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: `Add article: ${filename}`,
-          content: Buffer.from(content).toString('base64'),
-        }),
-      }
-    );
+    const response = await fetch(apiUrl, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `token ${githubToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: `Add article: ${filename}`,
+        content: Buffer.from(content).toString('base64'),
+        ...(sha ? { sha } : {}),
+      }),
+    });
 
     if (!response.ok) {
       const error = await response.json();
