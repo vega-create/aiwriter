@@ -158,14 +158,18 @@ async function getExistingArticlesFromGitHub(siteSlug: string): Promise<Existing
     if (!site?.github_repo) return [];
 
     const githubPath = site.github_path || 'src/content/posts/';
+    const headers: Record<string, string> = {
+      'Accept': 'application/vnd.github.v3+json',
+      'User-Agent': 'ai-writer',
+    };
+    // Use GitHub token from env if available
+    const githubToken = process.env.GITHUB_TOKEN;
+    if (githubToken) {
+      headers['Authorization'] = `token ${githubToken}`;
+    }
     const response = await fetch(
       `https://api.github.com/repos/${site.github_repo}/contents/${githubPath}`,
-      {
-        headers: {
-          'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'ai-writer',
-        },
-      }
+      { headers }
     );
 
     if (!response.ok) return [];
