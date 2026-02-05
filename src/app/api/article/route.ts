@@ -7,6 +7,7 @@ const openai = new OpenAI({
 });
 
 const PEXELS_API_KEY = process.env.PEXELS_API_KEY;
+const FREEPIK_API_KEY = process.env.FREEPIK_API_KEY;
 
 // Supabase client
 const supabaseUrl = process.env.SUPABASE_URL!;
@@ -95,6 +96,36 @@ async function searchPexelsImages(query: string, count: number = 15): Promise<Ar
   } catch {
     return [];
   }
+}
+
+async function searchFreepikImages(query: string, count: number = 10): Promise<Array<{ url: string; thumbnail: string; alt: string; photographer: string }>> {
+  if (!FREEPIK_API_KEY) return [];
+  try {
+    const response = await fetch(
+      `https://api.freepik.com/v1/resources?locale=en-US&page=1&limit=${count}&order=relevance&term=${encodeURIComponent(query)}&filters[content_type][photo]=1`,
+      { headers: { 'Accept-Language': 'en-US', 'x-freepik-api-key': FREEPIK_API_KEY } }
+    );
+    const data = await response.json();
+    return (data.data || []).map((item: any) => ({
+      url: item.image?.source?.url || item.image?.source_url || '',
+      thumbnail: item.image?.source?.url || item.image?.source_url || '',
+      alt: item.title || query,
+      photographer: 'Freepik',
+    }));
+  } catch {
+    return [];
+  }
+}
+
+// Combined image search: Pexels first, Freepik fallback
+async function searchImages(query: string, count: number = 15): Promise<Array<{ url: string; thumbnail: string; alt: string; photographer: string }>> {
+  let results = await searchPexelsImages(query, count);
+  // If Pexels returns few results, try Freepik
+  if (results.length < 3) {
+    const freepikResults = await searchFreepikImages(query, count);
+    results = [...results, ...freepikResults];
+  }
+  return results;
 }
 
 // Fetch external sources from Supabase for a given site
@@ -235,13 +266,14 @@ export async function POST(request: NextRequest) {
         .join('\n');
       internalLinksBlock = `
 
-📌 內部連結（必須使用）：
-以下是本站已有的文章清單，請在文章中自然地插入 2-4 個相關的內部連結。
+📌 內部連結（⚠️ 必須使用，不可省略！）：
+以下是本站已有的文章清單，你【必須】在文章中插入至少 2 個內部連結。
 ⚠️ 只能使用以下清單中的 URL，絕對不要自己編造連結！用 Markdown 格式 [適當的文字](URL) 融入段落中。
+⚠️ 如果不插入內部連結，這篇文章將不合格！
 
 ${linkList}
 
-選擇與本文主題最相關的文章來連結。`;
+從上面選擇 2-4 個與本文主題最相關的文章來連結。即使相關性不高，也要選最接近的插入。`;
     }
 
     // Build external links instruction for prompt
@@ -347,7 +379,7 @@ ${existingArticles?.length > 0 ? '- 在正文中自然插入 2-4 個內部連結
         if (['bible', 'mommystartup'].includes(siteSlug) && !query.toLowerCase().includes('asian')) {
           query = `asian ${query}`;
         }
-        const candidates = await searchPexelsImages(query, 15);
+        const candidates = await searchImages(query, 15);
         if (candidates.length > 0) {
           images[pos] = {
             selected: candidates[0],
