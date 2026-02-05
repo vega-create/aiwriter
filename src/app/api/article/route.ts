@@ -146,9 +146,59 @@ ${sourceList}
   }
 }
 
+// Fetch existing articles from GitHub for internal links
+async function getExistingArticlesFromGitHub(siteSlug: string): Promise<ExistingArticle[]> {
+  try {
+    const { data: site } = await supabase
+      .from('sites')
+      .select('github_repo, github_path, domain')
+      .eq('slug', siteSlug)
+      .single();
+
+    if (!site?.github_repo) return [];
+
+    const githubPath = site.github_path || 'src/content/posts/';
+    const response = await fetch(
+      `https://api.github.com/repos/${site.github_repo}/contents/${githubPath}`,
+      {
+        headers: {
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'ai-writer',
+        },
+      }
+    );
+
+    if (!response.ok) return [];
+
+    const files = await response.json();
+    if (!Array.isArray(files)) return [];
+
+    const domain = site.domain ? `https://${site.domain}` : '';
+
+    return files
+      .filter((f: any) => f.name.endsWith('.md'))
+      .map((f: any) => {
+        const slug = f.name.replace('.md', '');
+        return {
+          title: slug.replace(/-[a-z0-9]{8}$/, '').replace(/-/g, ' '),
+          slug,
+          url: `${domain}/posts/${slug}`,
+        };
+      });
+  } catch {
+    return [];
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { title, category, length, siteSlug, existingArticles } = await request.json();
+    const { title, category, length, siteSlug, existingArticles: providedArticles } = await request.json();
+
+    // If no articles provided by frontend, fetch from GitHub
+    let existingArticles = providedArticles;
+    if (!existingArticles || existingArticles.length === 0) {
+      existingArticles = await getExistingArticlesFromGitHub(siteSlug);
+    }
 
     // Generate random names for this article
     const randomNames = getRandomNames(3);
@@ -221,7 +271,9 @@ ${existingArticles?.length > 0 ? '- 在正文中自然插入 2-4 個內部連結
 {"cover": "封面圖搜尋關鍵字（英文）", "image1": "段落一配圖關鍵字（英文）", "image2": "段落二配圖關鍵字（英文）", "image3": "段落三配圖關鍵字（英文）"}
 ---IMAGE_KEYWORDS_END---
 
-注意：IMAGE_KEYWORDS 的值請用英文關鍵字，並且如果圖片需要有人物，請加上 "asian" 關鍵字（例如 "asian mother cooking" 而不是 "mother cooking"）。
+注意：IMAGE_KEYWORDS 的值請用英文關鍵字。
+- 如果圖片需要有人物，請加上 "asian" 關鍵字（例如 "asian mother cooking" 而不是 "mother cooking"）
+- 如果是基督教/聖經相關主題，所有關鍵字都要加上 "christian"（例如 "christian prayer"、"christian church worship"、"christian bible reading"），避免搜到其他宗教的圖片
 
 先輸出完整 Markdown 文章，再輸出 FAQ 和 IMAGE_KEYWORDS。`;
 
@@ -268,7 +320,11 @@ ${existingArticles?.length > 0 ? '- 在正文中自然插入 2-4 個內部連結
 
     await Promise.all(
       positions.map(async (pos) => {
-        const query = imageKeywords[pos] || title;
+        let query = imageKeywords[pos] || title;
+        // Safety net: add "christian" for bible site to avoid Islamic imagery
+        if (siteSlug === 'bible' && !query.toLowerCase().includes('christian')) {
+          query = `christian ${query}`;
+        }
         const candidates = await searchPexelsImages(query, 15);
         if (candidates.length > 0) {
           images[pos] = {
