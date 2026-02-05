@@ -304,7 +304,7 @@ export default function Home() {
       const res = await fetch('/api/keywords', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ category, count: kwCount }),
+        body: JSON.stringify({ category, count: kwCount, siteSlug: currentSite?.slug }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
