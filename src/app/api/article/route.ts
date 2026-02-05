@@ -146,15 +146,21 @@ ${sourceList}
   }
 }
 
-// Fetch existing articles from GitHub for internal links
-async function getExistingArticlesFromGitHub(siteSlug: string): Promise<ExistingArticle[]> {
+// Fetch existing articles from Supabase (primary) or GitHub (fallback)
+async function getExistingArticles(siteSlug: string): Promise<ExistingArticle[]> {
   try {
     const { data: site } = await supabase
       .from('sites')
-      .select('github_repo, github_path, domain')
+      .select('internal_articles, github_repo, github_path, domain')
       .eq('slug', siteSlug)
       .single();
 
+    // Primary: use Supabase internal_articles
+    if (site?.internal_articles && site.internal_articles.length > 0) {
+      return site.internal_articles;
+    }
+
+    // Fallback: fetch from GitHub
     if (!site?.github_repo) return [];
 
     const githubPath = site.github_path || 'src/content/posts/';
@@ -162,7 +168,6 @@ async function getExistingArticlesFromGitHub(siteSlug: string): Promise<Existing
       'Accept': 'application/vnd.github.v3+json',
       'User-Agent': 'ai-writer',
     };
-    // Use GitHub token from env if available
     const githubToken = process.env.GITHUB_TOKEN;
     if (githubToken) {
       headers['Authorization'] = `token ${githubToken}`;
@@ -198,8 +203,8 @@ export async function POST(request: NextRequest) {
   try {
     const { title, category, length, siteSlug, existingArticles: providedArticles } = await request.json();
 
-    // Always fetch from GitHub for complete internal links
-    const githubArticles = await getExistingArticlesFromGitHub(siteSlug);
+    // Always fetch from Supabase/GitHub for complete internal links
+    const githubArticles = await getExistingArticles(siteSlug);
 
     // Merge: GitHub articles + any frontend-provided articles (deduplicated)
     const allArticles = [...githubArticles];
