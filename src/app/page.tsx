@@ -537,7 +537,7 @@ image: "${coverImage}"
 imageAlt: "${coverAlt.replace(/"/g, '\\"')}"
 faq:
 ${faqYaml}
-author: "${user?.email || 'AI Writer'}"
+author: "Vega"
 ---
 
 ${content}`;
