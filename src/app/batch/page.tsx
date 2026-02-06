@@ -80,7 +80,12 @@ const SITE_CATEGORIES: Record<string, Array<{ value: string; label: string }>> =
         { value: '經文解釋', label: '📖 經文解釋' },
         { value: '信仰問答', label: '❓ 信仰問答' },
     ],
-    mommystartup: [
+    chparenting: [
+        { value: "媽媽喘息區", label: "☕ 媽媽喘息區" },
+        { value: "解壓笑一個", label: "😂 解壓笑一個" },
+        { value: "親子舒壓", label: "👩‍👧 親子舒壓" },
+        { value: "生活魔法", label: "✨ 生活魔法" },
+    ],    mommystartup: [
         { value: 'marketing', label: '📣 行銷' },
         { value: 'group-buying', label: '🛒 團購' },
         { value: 'parenting', label: '👶 育兒' },
