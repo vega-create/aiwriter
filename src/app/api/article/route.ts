@@ -392,7 +392,7 @@ ${existingArticles?.length > 0 ? '- 在正文中自然插入 2-4 個內部連結
           query = `christian ${query}`;
         }
         // Add "asian" for all Chinese-language sites when people are involved
-        if (['bible', 'mommystartup'].includes(siteSlug) && !query.toLowerCase().includes('asian')) {
+        if (['bible', 'mommystartup', 'chparenting'].includes(siteSlug) && !query.toLowerCase().includes('asian')) {
           query = `asian ${query}`;
         }
         const candidates = await searchImages(query, 15);
