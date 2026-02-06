@@ -9,6 +9,7 @@ interface Site {
   slug: string;
   github_repo?: string;
   github_path?: string;
+  categories?: string[];
 }
 
 interface User {
