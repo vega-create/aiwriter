@@ -861,14 +861,15 @@ ${content}`;
               <div className="form-row">
                 <div className="form-group">
                   <label>分類</label>
-                  {currentSite?.slug === 'bible' ? (
+                  {currentSite?.categories && currentSite.categories.length > 0 ? (
                     <select value={category} onChange={(e) => setCategory(e.target.value)}>
-                      <option value="每日靈修">🕊️ 每日靈修</option>
-                      <option value="經文解釋">📖 經文解釋</option>
-                      <option value="信仰問答">❓ 信仰問答</option>
+                      <option value="">-- 選擇分類 --</option>
+                      {currentSite.categories.map((cat: string) => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
                     </select>
                   ) : (
-                    <input type="text" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="輸入分類，例如：團購、育兒、行銷" />
+                    <input type="text" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="輸入分類" />
                   )}
                 </div>
                 <div className="form-group">
