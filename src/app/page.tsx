@@ -261,6 +261,7 @@ export default function Home() {
   }
 
   async function selectSite(site: Site) {
+    console.log("selectSite categories:", site.categories);
     setCurrentSite(site);
     setCategory(site.slug === 'bible' ? '每日靈修' : '');
     setStep(2);
@@ -862,12 +863,27 @@ ${content}`;
               <div className="form-row">
                 <div className="form-group">
                   <label>分類</label>
-                  {currentSite?.categories && currentSite.categories.length > 0 ? (
+                  {currentSite?.slug === 'bible' ? (
                     <select value={category} onChange={(e) => setCategory(e.target.value)}>
                       <option value="">-- 選擇分類 --</option>
-                      {currentSite.categories.map((cat: string) => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
+                      <option value="每日靈修">🕊️ 每日靈修</option>
+                      <option value="經文解釋">📖 經文解釋</option>
+                      <option value="信仰問答">❓ 信仰問答</option>
+                    </select>
+                  ) : currentSite?.slug === 'chparenting' ? (
+                    <select value={category} onChange={(e) => setCategory(e.target.value)}>
+                      <option value="">-- 選擇分類 --</option>
+                      <option value="媽媽喘息區">☕ 媽媽喘息區</option>
+                      <option value="解壓笑一個">😂 解壓笑一個</option>
+                      <option value="親子舒壓">👩‍👧 親子舒壓</option>
+                      <option value="生活魔法">✨ 生活魔法</option>
+                    </select>
+                  ) : currentSite?.slug === 'mommystartup' ? (
+                    <select value={category} onChange={(e) => setCategory(e.target.value)}>
+                      <option value="">-- 選擇分類 --</option>
+                      <option value="行銷">📈 行銷</option>
+                      <option value="團購">🛒 團購</option>
+                      <option value="育兒">👶 育兒</option>
                     </select>
                   ) : (
                     <input type="text" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="輸入分類" />
