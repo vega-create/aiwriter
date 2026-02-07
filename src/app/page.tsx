@@ -1045,6 +1045,9 @@ ${content}`;
             {articles.map((article, articleIdx) => {
               const tab = getTab(articleIdx);
               const toc = extractTOC(article.content);
+                 if (article.faq && article.faq.length > 0) {
+                  toc.push({ level: 2, text: '❓ 常見問題 FAQ' });
+                 }
 
               return (
                 <div className="card" key={articleIdx}>
