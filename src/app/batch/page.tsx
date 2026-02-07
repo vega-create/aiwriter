@@ -208,6 +208,7 @@ export default function BatchPage() {
     // Step 4-5: Articles
     const [articles, setArticles] = useState<Article[]>([]);
     const [articleLength, setArticleLength] = useState('medium');
+    const [includeImages, setIncludeImages] = useState(true);
     const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, title: '' });
     const [batchRunning, setBatchRunning] = useState(false);
     const batchRunningRef = useRef(false);
@@ -529,6 +530,7 @@ export default function BatchPage() {
                             title: t.title,
                             category: t.category,
                             length: lengthGuide[articleLength],
+                            includeImages,
                             siteSlug: t.siteSlug,
                             existingArticles: siteArticlesMap[t.siteId] || [],
                         }),
