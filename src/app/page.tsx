@@ -1080,6 +1080,7 @@ ${content}`;
                           </div>
                           <div className="image-actions">
                             <button className="btn btn-secondary btn-sm" onClick={() => randomSwapImage(articleIdx, pos)} title="隨機換圖">🔄</button>
+                            {selected?.url && <button className="btn btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); const updated = [...articles]; if (updated[articleIdx].images?.[pos]) { updated[articleIdx].images[pos].selected = null; } setArticles(updated); }} title="移除此圖">❌</button>}
                             <span className="image-count">{candidateCount} 張候選</span>
                           </div>
                         </div>
