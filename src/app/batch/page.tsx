@@ -90,6 +90,12 @@ const SITE_CATEGORIES: Record<string, Array<{ value: string; label: string }>> =
         { value: 'group-buying', label: '🛒 團購' },
         { value: 'parenting', label: '👶 育兒' },
     ],
+    veganote: [
+    { value: 'AI', label: '🤖 AI' },
+    { value: '行銷', label: '📈 行銷' },
+    { value: '開發', label: '💻 開發' },
+    { value: '生活', label: '🌱 生活' },
+],
 };
 
 const IMAGE_LABELS: Record<string, string> = {
