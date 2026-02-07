@@ -1119,7 +1119,7 @@ ${content}`;
                 {/* ========== Step 4: Progress ========== */}
                 {step === 4 && (
                     <div className="card">
-                        <h3>⏳ 批量產文中...（含圖片搜尋）</h3>
+                        <h3>⏳ 批量產文中...{includeImages ? "（含圖片搜尋）" : "（純文字）"}</h3>
                         <div style={{ marginBottom: 20 }}>
                             <div className="progress-bar">
                                 <div
