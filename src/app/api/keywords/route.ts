@@ -28,6 +28,14 @@ const SITE_CONTEXT: Record<string, { audience: string; examples: string }> = {
   {"keyword": "團購選品", "difficulty": "中等"}
 ]`,
   },
+  veganote: {
+    audience: '對 AI、數位行銷、網站開發、生活有興趣的學習者',
+    examples: `[
+    {"keyword": "Claude API 入門", "difficulty": "簡單"},
+    {"keyword": "Astro 框架", "difficulty": "簡單"},
+    {"keyword": "SEO 優化技巧", "difficulty": "中等"}
+    ]`,
+},
   default: {
     audience: '台灣的一般讀者',
     examples: `[
