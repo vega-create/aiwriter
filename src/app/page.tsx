@@ -977,10 +977,12 @@ ${content}`;
                       <option value="extra">深度（3000字以上）</option>
                     </select>
                     </div>
-                    <div style={{display:"flex",alignItems:"center",gap:"8px",marginTop:"8px"}}>
-                      <label>包含圖片</label>
+                  <div className="form-group">
+                    <label>包含圖片</label>
+                    <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
                       <input type="checkbox" checked={includeImages} onChange={(e) => setIncludeImages(e.target.checked)} />
-                      <span style={{fontSize:"12px",color:"#888"}}>{includeImages ? "產文含配圖" : "純文字，不搜圖"}</span>
+                      <span style={{fontSize:"13px",color:"#888"}}>{includeImages ? "產文含配圖" : "純文字，不搜圖"}</span>
+                    </div>
                   </div>
                   <div className="form-group">
                     <label>間隔秒數</label>
