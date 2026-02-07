@@ -180,6 +180,7 @@ export default function Home() {
   const [category, setCategory] = useState('');
   const [kwCount, setKwCount] = useState(20);
   const [articleLength, setArticleLength] = useState('medium');
+  const [includeImages, setIncludeImages] = useState(true);
   const [batchDelay, setBatchDelay] = useState(30);
 
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, title: '' });
@@ -441,6 +442,7 @@ export default function Home() {
             title,
             category,
             length: lengthGuide[articleLength],
+            includeImages,
             siteSlug: currentSite?.slug,
             existingArticles,
           }),
@@ -974,6 +976,11 @@ ${content}`;
                       <option value="long">長篇（2500-3000字）</option>
                       <option value="extra">深度（3000字以上）</option>
                     </select>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:"8px",marginTop:"8px"}}>
+                      <label>包含圖片</label>
+                      <input type="checkbox" checked={includeImages} onChange={(e) => setIncludeImages(e.target.checked)} />
+                      <span style={{fontSize:"12px",color:"#888"}}>{includeImages ? "產文含配圖" : "純文字，不搜圖"}</span>
                   </div>
                   <div className="form-group">
                     <label>間隔秒數</label>

@@ -267,7 +267,7 @@ async function getExistingArticles(siteSlug: string): Promise<ExistingArticle[]>
 
 export async function POST(request: NextRequest) {
   try {
-    const { title, category, length, siteSlug, existingArticles: providedArticles } = await request.json();
+    const { title, category, length, siteSlug, existingArticles: providedArticles, includeImages = true } = await request.json();
 
     // Always fetch from Supabase/GitHub for complete internal links
     const githubArticles = await getExistingArticles(siteSlug);
@@ -399,7 +399,10 @@ ${existingArticles?.length > 0 ? '- 在正文中自然插入 2-4 個內部連結
     // Remove trailing --- if present
     content = content.replace(/\n---\s*$/, '').trim();
 
-    // Search images for each position
+    // Search images for each position (skip if includeImages is false)
+    if (!includeImages) {
+      return NextResponse.json({ content, faq, imageKeywords: {}, images: {} });
+    }
     const images: Record<string, { selected: any; candidates: any[] }> = {};
     const positions = ['cover', 'image1', 'image2', 'image3'];
 
