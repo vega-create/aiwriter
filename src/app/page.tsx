@@ -885,6 +885,14 @@ ${content}`;
                       <option value="團購">🛒 團購</option>
                       <option value="育兒">👶 育兒</option>
                     </select>
+                 ) : currentSite?.slug === 'veganote' ? (
+                    <select value={category} onChange={(e) => setCategory(e.target.value)}>
+                      <option value="">-- 選擇分類 --</option>
+                      <option value="AI"> 🤖 AI</option>
+                      <option value="行銷">📈 行銷</option>
+                      <option value="開發">✨ 開發</option>
+                      <option value="生活">🌱 生活</option>
+                    </select>
                   ) : (
                     <input type="text" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="輸入分類" />
                   )}
