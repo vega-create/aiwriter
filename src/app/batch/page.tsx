@@ -81,10 +81,10 @@ const SITE_CATEGORIES: Record<string, Array<{ value: string; label: string }>> =
         { value: '信仰問答', label: '❓ 信仰問答' },
     ],
     chparenting: [
-        { value: "媽媽喘息區", label: "☕ 媽媽喘息區" },
-        { value: "解壓笑一個", label: "😂 解壓笑一個" },
-        { value: "親子舒壓", label: "👩‍👧 親子舒壓" },
-        { value: "生活魔法", label: "✨ 生活魔法" },
+        { value: "育兒崩潰", label: "🔥 育兒崩潰" },
+        { value: "媽媽情緒", label: "💛 媽媽情緒" },
+        { value: "親子關係", label: "👩‍👧 親子關係" },
+        { value: "生活實用", label: "✨ 生活實用" },
     ],    mommystartup: [
         { value: 'marketing', label: '📣 行銷' },
         { value: 'group-buying', label: '🛒 團購' },

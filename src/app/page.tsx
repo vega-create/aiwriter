@@ -875,10 +875,10 @@ ${content}`;
                   ) : currentSite?.slug === 'chparenting' ? (
                     <select value={category} onChange={(e) => setCategory(e.target.value)}>
                       <option value="">-- 選擇分類 --</option>
-                      <option value="媽媽喘息區">☕ 媽媽喘息區</option>
-                      <option value="解壓笑一個">😂 解壓笑一個</option>
-                      <option value="親子舒壓">👩‍👧 親子舒壓</option>
-                      <option value="生活魔法">✨ 生活魔法</option>
+                      <option value="育兒崩潰">🔥 育兒崩潰</option>
+                      <option value="媽媽情緒">💛 媽媽情緒</option>
+                      <option value="親子關係">👩‍👧 親子關係</option>
+                      <option value="生活實用">✨ 生活實用</option>
                     </select>
                   ) : currentSite?.slug === 'mommystartup' ? (
                     <select value={category} onChange={(e) => setCategory(e.target.value)}>
