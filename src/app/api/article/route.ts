@@ -162,13 +162,31 @@ async function searchFreepikImages(query: string, count: number = 10): Promise<A
 }
 
 // Combined image search: Pexels first, Freepik fallback
-async function searchImages(query: string, count: number = 15): Promise<Array<{ url: string; thumbnail: string; alt: string; photographer: string }>> {
-  let results = await searchPexelsImages(query, count);
-  // If Pexels returns few results, try Freepik
-  if (results.length < 3) {
-    const freepikResults = await searchFreepikImages(query, count);
-    results = [...results, ...freepikResults];
+async function searchImages(query: string, count: number = 15, preferFreepik: boolean = false): Promise<Array<{ url: string; thumbnail: string; alt: string; photographer: string }>> {
+  let results: Array<{ url: string; thumbnail: string; alt: string; photographer: string }> = [];
+  
+  if (preferFreepik) {
+    // Asian sites: Freepik first, Pexels as backup
+    results = await searchFreepikImages(query, count);
+    if (results.length < 3) {
+      const pexelsResults = await searchPexelsImages(query, count);
+      results = [...results, ...pexelsResults];
+    }
+  } else {
+    // Default: Pexels first, Freepik as backup
+    results = await searchPexelsImages(query, count);
+    if (results.length < 3) {
+      const freepikResults = await searchFreepikImages(query, count);
+      results = [...results, ...freepikResults];
+    }
   }
+  
+  // Shuffle results to avoid always picking the same images
+  for (let i = results.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [results[i], results[j]] = [results[j], results[i]];
+  }
+  
   return results;
 }
 
@@ -426,7 +444,8 @@ ${existingArticles?.length > 0 ? '- 在正文中自然插入 2-4 個內部連結
         if (['bible', 'mommystartup', 'chparenting'].includes(siteSlug) && !query.toLowerCase().includes('asian')) {
           query = `asian ${query}`;
         }
-        const candidates = await searchImages(query, 15);
+        const preferFreepik = ['bible', 'mommystartup', 'chparenting'].includes(siteSlug);
+        const candidates = await searchImages(query, 15, preferFreepik);
         if (candidates.length > 0) {
           images[pos] = {
             selected: candidates[0],
