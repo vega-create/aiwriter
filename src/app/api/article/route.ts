@@ -382,6 +382,14 @@ ${externalLinksInstruction}
 ${existingArticles?.length > 0 ? '- 在正文中自然插入 2-4 個內部連結（從上面提供的站內文章中選擇）' : ''}
 
 最後請額外輸出：
+---DESCRIPTION_START---
+用30-50字寫一段吸引人的文章摘要，讓人看了想點進來，不要只重複標題
+---DESCRIPTION_END---
+
+---TAGS_START---
+["標籤1", "標籤2", "標籤3"]
+---TAGS_END---
+
 ---FAQ_START---
 [
   {"q": "問題1", "a": "回答1（50-80字）"},
@@ -422,6 +430,23 @@ ${existingArticles?.length > 0 ? '- 在正文中自然插入 2-4 個內部連結
       } catch { }
     }
 
+    // Parse description
+    let description = '';
+    const descMatch = raw.match(/---DESCRIPTION_START---([\s\S]*?)---DESCRIPTION_END---/);
+    if (descMatch) {
+      description = descMatch[1].trim();
+    }
+
+    // Parse tags
+    let tags: string[] = [];
+    const tagsMatch = raw.match(/---TAGS_START---([\s\S]*?)---TAGS_END---/);
+    if (tagsMatch) {
+      try {
+        const cleaned = tagsMatch[1].replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        tags = JSON.parse(cleaned);
+      } catch { }
+    }
+
     // Parse image keywords
     let imageKeywords: Record<string, string> = {};
     const imgMatch = raw.match(/---IMAGE_KEYWORDS_START---([\s\S]*?)---IMAGE_KEYWORDS_END---/);
@@ -434,6 +459,8 @@ ${existingArticles?.length > 0 ? '- 在正文中自然插入 2-4 個內部連結
 
     // Extract article content (before FAQ markers)
     let content = raw.split('---FAQ_START---')[0].trim();
+    content = content.split('---DESCRIPTION_START---')[0].trim();
+    content = content.split('---TAGS_START---')[0].trim();
     // Remove trailing --- if present
     content = content.replace(/\n---\s*$/, '').trim();
 
@@ -469,6 +496,8 @@ ${existingArticles?.length > 0 ? '- 在正文中自然插入 2-4 個內部連結
     return NextResponse.json({
       content,
       faq,
+      description,
+      tags,
       imageKeywords,
       images,
     });

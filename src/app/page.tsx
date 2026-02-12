@@ -461,6 +461,8 @@ export default function Home() {
             slug: generateSlug(title),
             scheduledDate: dateStr,
             faq: data.faq || [],
+                        description: data.description || "",
+                        tags: data.tags || [],
             imageKeywords: data.imageKeywords || {},
             images: data.images || {},
             siteId: currentSite?.id,
@@ -533,15 +535,15 @@ export default function Home() {
 
     return `---
 title: "${article.title.replace(/"/g, '\\"')}"
-description: "${article.title.replace(/"/g, '\\"')}"
+description: "${(article.description || article.title).replace(/"/g, '\\"')}"
 publishDate: ${date}
 category: "${article.category}"
-tags: []
+tags: [${(article.tags || []).map(t => `"${t}"`).join(", ")}]
 image: "${coverImage}"
 imageAlt: "${coverAlt.replace(/"/g, '\\"')}"
 faq:
 ${faqYaml}
-author: "Vega"
+author: "${({chparenting:"薇佳媽咪",bible:"恩典小編",mommystartup:"媽咪小編",veganote:"Vega"})[article.siteSlug || siteSlug] || "編輯部"}"
 ---
 
 ${content}`;

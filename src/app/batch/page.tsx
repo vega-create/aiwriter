@@ -549,6 +549,8 @@ export default function BatchPage() {
                         slug: generateSlug(t.title),
                         scheduledDate: startDate.toISOString().split('T')[0],
                         faq: data.faq || [],
+                        description: data.description || "",
+                        tags: data.tags || [],
                         imageKeywords: data.imageKeywords || {},
                         images: data.images || {},
                         siteId: t.siteId,
@@ -617,15 +619,15 @@ export default function BatchPage() {
 
         return `---
 title: "${article.title.replace(/"/g, '\\"')}"
-description: "${article.title.replace(/"/g, '\\"')}"
+description: "${(article.description || article.title).replace(/"/g, '\\"')}"
 publishDate: ${date}
 category: "${article.category}"
-tags: []
+tags: [${(article.tags || []).map(t => `"${t}"`).join(", ")}]
 image: "${coverImage}"
 imageAlt: "${coverAlt.replace(/"/g, '\\"')}"
 faq:
 ${faqYaml}
-author: "Vega"
+author: "${({chparenting:"薇佳媽咪",bible:"恩典小編",mommystartup:"媽咪小編",veganote:"Vega"})[article.siteSlug || siteSlug] || "編輯部"}"
 ---
 
 ${content}`;
