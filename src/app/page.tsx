@@ -61,9 +61,6 @@ interface Article {
 
 const IMAGE_LABELS: Record<string, string> = {
   cover: '📷 封面圖',
-  image1: '🖼️ 段落一配圖',
-  image2: '🖼️ 段落二配圖',
-  image3: '🖼️ 段落三配圖',
 };
 
 // ========== Markdown → HTML（含表格） ==========
