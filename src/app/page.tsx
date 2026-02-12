@@ -519,7 +519,7 @@ export default function Home() {
 
     const h2Pattern = /^## [一二三四五六七八九十]/gm;
     const h2Matches = Array.from(content.matchAll(h2Pattern));
-    const imagePositions = ['image1', 'image2', 'image3'];
+    const imagePositions: string[] = [];
 
     for (let idx = 0; idx < Math.min(h2Matches.length, 3); idx++) {
       const pos = imagePositions[idx];
@@ -1072,7 +1072,7 @@ ${content}`;
 
                   {/* 圖片區 */}
                   <div className="image-grid">
-                    {['cover', 'image1', 'image2', 'image3'].map((pos) => {
+                    {['cover'].map((pos) => {
                       const imgData = article.images?.[pos];
                       const selected = imgData?.selected;
                       const candidateCount = imgData?.candidates?.length || 0;

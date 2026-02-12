@@ -102,9 +102,6 @@ const SITE_CATEGORIES: Record<string, Array<{ value: string; label: string }>> =
 
 const IMAGE_LABELS: Record<string, string> = {
     cover: '📷 封面圖',
-    image1: '🖼️ 段落一',
-    image2: '🖼️ 段落二',
-    image3: '🖼️ 段落三',
 };
 
 // ========== Markdown → HTML ==========
@@ -604,7 +601,7 @@ export default function BatchPage() {
 
         const h2Pattern = /^## [一二三四五六七八九十]/gm;
         const h2Matches = Array.from(content.matchAll(h2Pattern));
-        const imagePositions = ['image1', 'image2', 'image3'];
+        const imagePositions: string[] = [];
 
         for (let idx = 0; idx < Math.min(h2Matches.length, 3); idx++) {
             const pos = imagePositions[idx];
@@ -1182,7 +1179,7 @@ ${content}`;
 
                                     {/* Images */}
                                     <div className="image-grid">
-                                        {['cover', 'image1', 'image2', 'image3'].map((pos) => {
+                                        {['cover'].map((pos) => {
                                             const imgData = article.images?.[pos];
                                             const selected = imgData?.selected;
                                             const candidateCount = imgData?.candidates?.length || 0;
