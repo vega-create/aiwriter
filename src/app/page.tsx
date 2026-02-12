@@ -543,7 +543,7 @@ image: "${coverImage}"
 imageAlt: "${coverAlt.replace(/"/g, '\\"')}"
 faq:
 ${faqYaml}
-author: "${({"chparenting":"薇佳媽咪","bible":"恩典小編","mommystartup":"媽咪小編","veganote":"Vega"} as Record<string,string>)[(article.siteSlug || siteSlug) as string] || "編輯部"}"
+author: "${({"chparenting":"薇佳媽咪","bible":"恩典小編","mommystartup":"媽咪小編","veganote":"Vega"} as Record<string,string>)[(article.siteSlug || "") as string] || "編輯部"}"
 ---
 
 ${content}`;
