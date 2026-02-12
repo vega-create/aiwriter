@@ -391,7 +391,7 @@ ${existingArticles?.length > 0 ? '- 在正文中自然插入 2-4 個內部連結
 ---FAQ_END---
 
 ---IMAGE_KEYWORDS_START---
-{"cover": "封面圖搜尋關鍵字（英文）", "image1": "段落一配圖關鍵字（英文）", "image2": "段落二配圖關鍵字（英文）", "image3": "段落三配圖關鍵字（英文）"}
+{"cover": "封面圖搜尋關鍵字（英文）"}
 ---IMAGE_KEYWORDS_END---
 
 注意：IMAGE_KEYWORDS 的值請用英文關鍵字。
@@ -442,7 +442,7 @@ ${existingArticles?.length > 0 ? '- 在正文中自然插入 2-4 個內部連結
       return NextResponse.json({ content, faq, imageKeywords: {}, images: {} });
     }
     const images: Record<string, { selected: any; candidates: any[] }> = {};
-    const positions = ['cover', 'image1', 'image2', 'image3'];
+    const positions = ['cover'];
 
     await Promise.all(
       positions.map(async (pos) => {
