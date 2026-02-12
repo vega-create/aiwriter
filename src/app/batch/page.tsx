@@ -64,6 +64,8 @@ interface Article {
     slug: string;
     scheduledDate: string;
     faq: Array<{ q: string; a: string }>;
+    description?: string;
+    tags?: string[];
     imageKeywords: Record<string, string>;
     images: ArticleImages;
     siteId: string;
