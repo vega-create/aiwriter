@@ -285,7 +285,7 @@ async function getExistingArticles(siteSlug: string): Promise<ExistingArticle[]>
   }
 }
 
-// Second GPT call: pick relevant articles and insert links into content
+// Second GPT call: pick relevant articles, then programmatically insert
 async function insertInternalLinks(content: string, articles: ExistingArticle[]): Promise<string> {
   if (!articles || articles.length === 0) return content;
 
@@ -295,30 +295,43 @@ async function insertInternalLinks(content: string, articles: ExistingArticle[])
       .map((a, i) => (i + 1) + '. ' + a.title + ' → ' + a.url)
       .join('\n');
 
-    const linkPrompt = '以下是一篇已完成的文章（前3000字）：\n\n' + content.slice(0, 3000) + '\n\n---\n\n以下是站內其他文章清單：\n' + articleList + '\n\n請從清單中選出 3 篇與本文最相關的文章，並指定要在文章中的哪個「原文片段」插入連結。\n\n回傳格式（純 JSON，不要加 markdown 標記）：\n[{"original":"文章中的一段原文（10-20字，必須完全一致）","replacement":"把原文中某幾個字替換成 [連結文字](URL) 的版本"}]\n\n規則：\n- original 必須是文章中「真實存在」的文字片段，完全一致才能替換成功\n- replacement 只是把 original 中的某幾個字加上 Markdown 連結，其餘文字不變\n- 不要改變原文意思\n- 選擇 3 篇最相關的文章\n- 只回傳 JSON 陣列，不要其他文字';
+    const pickPrompt = '以下是一篇文章的前1500字：\n\n' + content.slice(0, 1500) + '\n\n以下是站內文章清單：\n' + articleList + '\n\n請選出 3 篇與本文最相關的文章，回傳 JSON（不要 markdown 標記）：\n[{"index":1,"anchor":"適合當連結的2-4個字"},{"index":5,"anchor":"適合的字"},{"index":12,"anchor":"適合的字"}]\n\nindex 是文章編號，anchor 是你建議在本文中用來當連結文字的關鍵詞（這個詞必須出現在本文中）。只回傳 JSON。';
 
-    const linkCompletion = await openai.chat.completions.create({
+    const pickResult = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
-      messages: [
-        { role: 'user', content: linkPrompt },
-      ],
+      messages: [{ role: 'user', content: pickPrompt }],
       temperature: 0.3,
-      max_tokens: 1000,
+      max_tokens: 300,
     });
 
-    const linkRaw = linkCompletion.choices[0].message.content || '';
-    const cleaned = linkRaw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const replacements = JSON.parse(cleaned) as Array<{ original: string; replacement: string }>;
+    const pickRaw = pickResult.choices[0].message.content || '';
+    const cleaned = pickRaw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const picks = JSON.parse(cleaned) as Array<{ index: number; anchor: string }>;
 
     let result = content;
     let insertedCount = 0;
-    for (const r of replacements) {
-      if (r.original && r.replacement && result.includes(r.original)) {
-        result = result.replace(r.original, r.replacement);
-        insertedCount++;
-      }
+
+    for (const pick of picks) {
+      const article = articles[pick.index - 1];
+      if (!article) continue;
+
+      const anchor = pick.anchor;
+      if (!anchor || anchor.length < 2) continue;
+
+      // Find first occurrence in content that's not already a link
+      const pos = result.indexOf(anchor);
+      if (pos === -1) continue;
+
+      // Check it's not already inside a markdown link
+      const before = result.slice(Math.max(0, pos - 10), pos);
+      if (before.includes('[') || before.includes('](')) continue;
+
+      // Replace first occurrence only
+      result = result.slice(0, pos) + '[' + anchor + '](' + article.url + ')' + result.slice(pos + anchor.length);
+      insertedCount++;
     }
-    console.log('[內連] 精準插入完成，成功 ' + insertedCount + '/' + replacements.length + ' 個');
+
+    console.log('[內連] 精準插入完成，成功 ' + insertedCount + '/' + picks.length + ' 個');
     return result;
   } catch (err) {
     console.log('[內連] 插入失敗，跳過：' + (err as Error).message);
