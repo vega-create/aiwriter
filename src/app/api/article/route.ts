@@ -20,7 +20,7 @@ interface ExistingArticle {
   url: string;
 }
 
-// Random name pool - categorized to avoid repetition
+// Random name pool
 const FEMALE_NAMES = [
   '雅琪', '佩珊', '怡君', '婉如', '淑芬', '詩涵', '筱婷', '佳穎',
   '欣怡', '雅雯', '芷瑄', '宜蓁', '品妤', '羽彤', '思妤', '子晴',
@@ -34,7 +34,6 @@ const MALE_NAMES = [
   '泓毅', '哲瑋', '庭瑋', '睿杰', '晉豪', '威廷', '峻維', '聖恩',
 ];
 
-// Pick random non-repeating names
 function getRandomNames(count: number = 3): string {
   const shuffledF = [...FEMALE_NAMES].sort(() => Math.random() - 0.5);
   const shuffledM = [...MALE_NAMES].sort(() => Math.random() - 0.5);
@@ -167,7 +166,6 @@ async function searchFreepikImages(query: string, count: number = 10): Promise<A
   }
 }
 
-// Combined image search: Pexels first, Freepik fallback
 async function searchImages(query: string, count: number = 15, preferFreepik: boolean = false): Promise<Array<{ url: string; thumbnail: string; alt: string; photographer: string }>> {
   let results: Array<{ url: string; thumbnail: string; alt: string; photographer: string }> = [];
 
@@ -193,7 +191,6 @@ async function searchImages(query: string, count: number = 15, preferFreepik: bo
   return results;
 }
 
-// Fetch external sources from Supabase for a given site
 async function getExternalSources(siteSlug: string, category: string): Promise<string> {
   try {
     const { data: site } = await supabase
@@ -205,7 +202,6 @@ async function getExternalSources(siteSlug: string, category: string): Promise<s
     if (!site?.external_sources) return '';
 
     const sources = site.external_sources;
-
     let relevantSources: Array<{ name: string; url: string }> = [];
 
     for (const [cat, links] of Object.entries(sources)) {
@@ -239,7 +235,6 @@ ${sourceList}
   }
 }
 
-// Fetch existing articles from Supabase (primary) or GitHub (fallback)
 async function getExistingArticles(siteSlug: string): Promise<ExistingArticle[]> {
   try {
     const { data: site } = await supabase
@@ -248,12 +243,10 @@ async function getExistingArticles(siteSlug: string): Promise<ExistingArticle[]>
       .eq('slug', siteSlug)
       .single();
 
-    // Primary: use Supabase internal_articles
     if (site?.internal_articles && site.internal_articles.length > 0) {
       return site.internal_articles;
     }
 
-    // Fallback: fetch from GitHub
     if (!site?.github_repo) return [];
 
     const githubPath = site.github_path || 'src/content/posts';
@@ -292,14 +285,53 @@ async function getExistingArticles(siteSlug: string): Promise<ExistingArticle[]>
   }
 }
 
+// Second GPT call: pick relevant articles and insert links into content
+async function insertInternalLinks(content: string, articles: ExistingArticle[]): Promise<string> {
+  if (!articles || articles.length === 0) return content;
+
+  try {
+    const articleList = articles
+      .slice(0, 20)
+      .map((a, i) => (i + 1) + '. ' + a.title + ' → ' + a.url)
+      .join('\n');
+
+    const linkPrompt = '以下是一篇已完成的文章（前3000字）：\n\n' + content.slice(0, 3000) + '\n\n---\n\n以下是站內其他文章清單：\n' + articleList + '\n\n請從清單中選出 3 篇與本文最相關的文章，並指定要在文章中的哪個「原文片段」插入連結。\n\n回傳格式（純 JSON，不要加 markdown 標記）：\n[{"original":"文章中的一段原文（10-20字，必須完全一致）","replacement":"把原文中某幾個字替換成 [連結文字](URL) 的版本"}]\n\n規則：\n- original 必須是文章中「真實存在」的文字片段，完全一致才能替換成功\n- replacement 只是把 original 中的某幾個字加上 Markdown 連結，其餘文字不變\n- 不要改變原文意思\n- 選擇 3 篇最相關的文章\n- 只回傳 JSON 陣列，不要其他文字';
+
+    const linkCompletion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'user', content: linkPrompt },
+      ],
+      temperature: 0.3,
+      max_tokens: 1000,
+    });
+
+    const linkRaw = linkCompletion.choices[0].message.content || '';
+    const cleaned = linkRaw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const replacements = JSON.parse(cleaned) as Array<{ original: string; replacement: string }>;
+
+    let result = content;
+    let insertedCount = 0;
+    for (const r of replacements) {
+      if (r.original && r.replacement && result.includes(r.original)) {
+        result = result.replace(r.original, r.replacement);
+        insertedCount++;
+      }
+    }
+    console.log('[內連] 精準插入完成，成功 ' + insertedCount + '/' + replacements.length + ' 個');
+    return result;
+  } catch (err) {
+    console.log('[內連] 插入失敗，跳過：' + (err as Error).message);
+    return content;
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { title, category, length, siteSlug, existingArticles: providedArticles, includeImages = true } = await request.json();
 
-    // Always fetch from Supabase/GitHub for complete internal links
     const githubArticles = await getExistingArticles(siteSlug);
 
-    // Merge: GitHub articles + any frontend-provided articles (deduplicated)
     const allArticles = [...githubArticles];
     if (providedArticles && providedArticles.length > 0) {
       const existingSlugs = new Set(allArticles.map((a: ExistingArticle) => a.slug));
@@ -310,28 +342,14 @@ export async function POST(request: NextRequest) {
       }
     }
     const existingArticles = allArticles;
-    console.log(`[內連] siteSlug=${siteSlug}, 抓到=${githubArticles.length}, 合併後=${existingArticles.length}`);
+    console.log('[內連] siteSlug=' + siteSlug + ', 抓到=' + githubArticles.length + ', 合併後=' + existingArticles.length);
 
-    // Generate random names for this article
     const randomNames = getRandomNames(3);
     const siteStyleFn = SITE_PROMPTS[siteSlug] || SITE_PROMPTS.default;
     const siteStyle = siteStyleFn(randomNames);
 
-    // Fetch external sources from Supabase
     const externalSourcesBlock = await getExternalSources(siteSlug, category);
 
-    // Pre-compute internal links list (avoid nested template literal issues)
-    let internalLinksForPrompt = '';
-    if (existingArticles && existingArticles.length > 0) {
-      const linkLines = existingArticles
-        .slice(0, 20)
-        .map((a: ExistingArticle) => '  - [' + a.title + '](' + a.url + ')')
-        .join('\n');
-      internalLinksForPrompt = '- ⚠️【必須】在正文中插入 2-4 個內部連結！從以下站內文章清單選擇最相關的：\n' + linkLines + '\n  請用 [適當文字](URL) 格式自然融入段落中，絕對不可省略內部連結！';
-      console.log(`[內連] 已建立內連清單，共 ${existingArticles.slice(0, 20).length} 篇`);
-    }
-
-    // Build external links instruction for prompt
     let externalLinksInstruction = '';
     if (externalSourcesBlock) {
       externalLinksInstruction = '- 在正文中自然插入 2-4 個外部連結（從上面提供的來源清單中選擇）';
@@ -339,72 +357,9 @@ export async function POST(request: NextRequest) {
       externalLinksInstruction = '- 在正文中自然插入 2-4 個外部連結（連到真實的權威網站，如維基百科、政府網站、知名媒體等）';
     }
 
-    // Build internal links block for system prompt
-    let internalSourcesBlock = '';
-    if (existingArticles && existingArticles.length > 0) {
-      const linkLines = existingArticles
-        .slice(0, 20)
-        .map((a: ExistingArticle) => '- [' + a.title + '](' + a.url + ')')
-        .join('\n');
-      internalSourcesBlock = `
+    const systemPrompt = siteStyle + '\n\n重要 SEO 規範：\n- 文章必須包含 2-4 個外部連結，自然融入內容中\n- 外部連結用 Markdown 格式 [文字](URL)\n- 文章必須有故事性開頭，不要直接說教' + externalSourcesBlock;
 
-📌 內部連結來源清單（必須從以下清單中選擇 2-4 個）：
-⚠️ 只能使用以下清單中的站內文章作為內部連結，不要自己編造！
-${linkLines}
-
-請從上面的清單中選擇 2-4 個與文章主題最相關的站內文章，用 Markdown 格式 [適當的文字](URL) 自然融入文章中。`;
-    }
-
-    const systemPrompt = siteStyle + `
-
-重要 SEO 規範：
-- 文章必須包含 2-4 個外部連結，自然融入內容中
-- 文章必須包含 2-4 個內部連結（站內文章），自然融入內容中
-- 所有連結用 Markdown 格式 [文字](URL)
-- 文章必須有故事性開頭，不要直接說教` + externalSourcesBlock + internalSourcesBlock;
-    const prompt = `請撰寫一篇關於「${title}」的文章。
-
-分類：${category}
-字數要求：${length || '2000-2500字'}
-
-文章結構要求：
-1. 標題（# 格式，使用原標題）
-2. 故事性開頭 — 用一個具體的小故事或生活情境帶入（100-150字）
-3. 直接回答 — 簡要回答核心問題（50-80字）
-4. 3-5 個重點段落（## 格式），每段 200-350 字
-5. 實際應用 — 給讀者的行動建議
-6. 結語 — 總結 + 呼籲行動
-
-連結要求（⚠️ 非常重要，必須遵守！）：
-${externalLinksInstruction}
-${internalLinksForPrompt}
-
-最後請額外輸出：
----DESCRIPTION_START---
-用30-50字寫一段吸引人的文章摘要，讓人看了想點進來，不要只重複標題
----DESCRIPTION_END---
-
----TAGS_START---
-["標籤1", "標籤2", "標籤3"]
----TAGS_END---
-
----FAQ_START---
-[
-  {"q": "問題1", "a": "回答1（50-80字）"},
-  {"q": "問題2", "a": "回答2（50-80字）"},
-  {"q": "問題3", "a": "回答3（50-80字）"}
-]
----FAQ_END---
-
----IMAGE_KEYWORDS_START---
-{"cover": "封面圖搜尋關鍵字（英文）"}
----IMAGE_KEYWORDS_END---
-
-注意：IMAGE_KEYWORDS 的值請用英文關鍵字。
-- 如果圖片需要有人物，請加上 "asian" 關鍵字（例如 "asian mother cooking" 而不是 "mother cooking"）
-- 如果是基督教/聖經相關主題，所有關鍵字都要加上 "christian"（例如 "christian prayer"、"christian church worship"、"christian bible reading"），避免搜到其他宗教的圖片
-
-先輸出完整 Markdown 文章，再輸出 FAQ 和 IMAGE_KEYWORDS。`;
+    const prompt = '請撰寫一篇關於「' + title + '」的文章。\n\n分類：' + category + '\n字數要求：' + (length || '2000-2500字') + '\n\n文章結構要求：\n1. 標題（# 格式，使用原標題）\n2. 故事性開頭 — 用一個具體的小故事或生活情境帶入（100-150字）\n3. 直接回答 — 簡要回答核心問題（50-80字）\n4. 3-5 個重點段落（## 格式），每段 200-350 字\n5. 實際應用 — 給讀者的行動建議\n6. 結語 — 總結 + 呼籲行動\n\n連結要求：\n' + externalLinksInstruction + '\n\n最後請額外輸出：\n---DESCRIPTION_START---\n用30-50字寫一段吸引人的文章摘要，讓人看了想點進來，不要只重複標題\n---DESCRIPTION_END---\n\n---TAGS_START---\n["標籤1", "標籤2", "標籤3"]\n---TAGS_END---\n\n---FAQ_START---\n[\n  {"q": "問題1", "a": "回答1（50-80字）"},\n  {"q": "問題2", "a": "回答2（50-80字）"},\n  {"q": "問題3", "a": "回答3（50-80字）"}\n]\n---FAQ_END---\n\n---IMAGE_KEYWORDS_START---\n{"cover": "封面圖搜尋關鍵字（英文）"}\n---IMAGE_KEYWORDS_END---\n\n注意：IMAGE_KEYWORDS 的值請用英文關鍵字。\n- 如果圖片需要有人物，請加上 "asian" 關鍵字（例如 "asian mother cooking" 而不是 "mother cooking"）\n- 如果是基督教/聖經相關主題，所有關鍵字都要加上 "christian"（例如 "christian prayer"、"christian church worship"、"christian bible reading"），避免搜到其他宗教的圖片\n\n先輸出完整 Markdown 文章，再輸出 FAQ 和 IMAGE_KEYWORDS。';
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -455,13 +410,18 @@ ${internalLinksForPrompt}
       } catch { }
     }
 
-    // Extract article content (before FAQ markers)
+    // Extract article content
     let content = raw.split('---FAQ_START---')[0].trim();
     content = content.split('---DESCRIPTION_START---')[0].trim();
     content = content.split('---TAGS_START---')[0].trim();
     content = content.replace(/\n---\s*$/, '').trim();
 
-    // Search images for each position (skip if includeImages is false)
+    // Auto-insert internal links via second GPT call
+    if (existingArticles && existingArticles.length > 0) {
+      content = await insertInternalLinks(content, existingArticles);
+    }
+
+    // Search images
     if (!includeImages) {
       return NextResponse.json({ content, faq, imageKeywords: {}, images: {} });
     }
@@ -472,10 +432,10 @@ ${internalLinksForPrompt}
       positions.map(async (pos) => {
         let query = imageKeywords[pos] || title;
         if (siteSlug === 'bible' && !query.toLowerCase().includes('christian')) {
-          query = `christian ${query}`;
+          query = 'christian ' + query;
         }
         if (['bible', 'mommystartup', 'chparenting'].includes(siteSlug) && !query.toLowerCase().includes('asian')) {
-          query = `asian ${query}`;
+          query = 'asian ' + query;
         }
         const preferFreepik = ['bible', 'mommystartup', 'chparenting'].includes(siteSlug);
         const candidates = await searchImages(query, 15, preferFreepik);
