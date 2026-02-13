@@ -364,6 +364,7 @@ ${linkList}
 - 文章必須包含 2-4 個外部連結，自然融入內容中
 - 外部連結用 Markdown 格式 [文字](URL)
 - 文章必須有故事性開頭，不要直接說教${externalSourcesBlock}${internalLinksBlock}`;
+    console.log(`[內連debug] internalLinksBlock長度=${internalLinksBlock.length}`);
 
     const prompt = `請撰寫一篇關於「${title}」的文章。
 
