@@ -251,6 +251,16 @@ ${article.content}`;
                         a.id === article.id ? { ...a, github_pushed: true, status: 'published' } : a
                     );
                     setBatchDetail({ ...batchDetail, articles: updated });
+
+                    // If all articles published, update batch status
+                    const allPublished = updated.every((a) => a.status === 'published');
+                    if (allPublished) {
+                        await fetch(`/api/batch/${batchDetail.batch.id}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ status: 'published' }),
+                        });
+                    }
                 }
                 setStatus({ type: 'success', message: `"${article.title}" 已推送！` });
             } else {
