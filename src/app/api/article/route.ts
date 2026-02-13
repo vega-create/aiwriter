@@ -363,8 +363,7 @@ ${linkList}
 重要 SEO 規範：
 - 文章必須包含 2-4 個外部連結，自然融入內容中
 - 外部連結用 Markdown 格式 [文字](URL)
-- 文章必須有故事性開頭，不要直接說教${externalSourcesBlock}${internalLinksBlock}`;
-    console.log(`[內連debug] internalLinksBlock長度=${internalLinksBlock.length}`);
+- 文章必須有故事性開頭，不要直接說教${externalSourcesBlock}`;
 
     const prompt = `請撰寫一篇關於「${title}」的文章。
 
@@ -381,7 +380,9 @@ ${linkList}
 
 連結要求：
 ${externalLinksInstruction}
-${existingArticles?.length > 0 ? '- 在正文中自然插入 2-4 個內部連結（從上面提供的站內文章中選擇）' : ''}
+${existingArticles?.length > 0 ? `- ⚠️【必須】在正文中自然插入 2-4 個內部連結，從以下清單選擇：
+${existingArticles.slice(0, 20).map((a: ExistingArticle) => `  [${a.title}](${a.url})`).join('\\n')}
+選最相關的 2-4 篇，用 [適當文字](URL) 格式自然融入段落中。` : ''}
 
 最後請額外輸出：
 ---DESCRIPTION_START---
