@@ -267,7 +267,7 @@ async function getExistingArticles(siteSlug: string): Promise<ExistingArticle[]>
     // Fallback: fetch from GitHub
     if (!site?.github_repo) return [];
 
-    const githubPath = site.github_path || 'src/content/posts/';
+    const githubPath = site.github_path || 'src/content/posts';
     const headers: Record<string, string> = {
       'Accept': 'application/vnd.github.v3+json',
       'User-Agent': 'ai-writer',
