@@ -66,7 +66,7 @@ const SITE_PROMPTS: Record<string, (names: string) => string> = {
 - 開頭用一個生動的故事場景引起共鳴（2-3 段），讓媽媽覺得「這就是在說我」
 - 內容要具體可執行，不要空泛的建議
 - 多用輕鬆幽默的口吻，讓媽媽讀了會心一笑
-- 故事中的人名請使用以下名字：\${names}。絕對不要用英文名字，也不要用「小美」「小華」這類過於常見的名字
+- 故事中的人名請使用以下名字：${names}。絕對不要用英文名字，也不要用「小美」「小華」這類過於常見的名字
 
 SEO 優化指示：
 - 標題中的關鍵字必須在文章前 100 字內自然出現
@@ -80,11 +80,6 @@ SEO 優化指示：
 - 文章主段落標題一定要用 ## （H2），絕對不要用 ###（H3）當主標題
 - 不要在文章中插入圖片的 Markdown 語法（例如 ![alt](url)），系統會自動配圖
 - 文章開頭不要重複標題，直接從故事場景開始寫
-- description 要寫 30-50 字的文章摘要，不要只重複標題關鍵字，要讓人想點進來看
-
-格式規定（非常重要）：
-- 文章主段落標題一定要用 ## （H2），絕對不要用 ###（H3）當主標題
-- 不要在文章中插入圖片的 Markdown 語法（例如 ![alt](url)），系統會自動配圖
 - description 要寫 30-50 字的文章摘要，不要只重複標題關鍵字，要讓人想點進來看
 
 ⚠️ 分類特殊指示：
@@ -105,19 +100,19 @@ SEO 優化指示：
 
   veganote: (names) => `你是一位專業的技術學習筆記寫手，名叫「Vega」。你正在為個人學習筆記網站「Vega Note」撰寫文章。
 
- 寫作風格
+寫作風格：
 - 語氣親切自然，像朋友分享學習心得
 - 用「我」作為第一人稱，帶入個人經驗和觀點
 - 有實際操作步驟和程式碼範例（技術類文章）
 - 用台灣用語，繁體中文
 
- 分類特殊指示
+分類特殊指示：
 - AI：介紹 Claude API、Prompt Engineering、AI 自動化工具、各種AI的使用心得
 - 行銷：SEO 優化技巧、廣告投放、內容行銷策略的實戰經驗
 - 開發：Astro、Next.js、React、GitHub Actions、Vercel 的技術筆記
 - 生活：學習方法、工作效率、個人成長的反思、各類學習、手作等等
 
- 注意事項
+注意事項：
 - 內文中提到的人名必須使用台灣常見的名字：${names}
 - 文章要有故事性開頭，帶入個人學習情境
 - 2000 字以上，含 H2/H3 結構、FAQ`,
@@ -177,14 +172,12 @@ async function searchImages(query: string, count: number = 15, preferFreepik: bo
   let results: Array<{ url: string; thumbnail: string; alt: string; photographer: string }> = [];
 
   if (preferFreepik) {
-    // Asian sites: Freepik first, Pexels as backup
     results = await searchFreepikImages(query, count);
     if (results.length < 3) {
       const pexelsResults = await searchPexelsImages(query, count);
       results = [...results, ...pexelsResults];
     }
   } else {
-    // Default: Pexels first, Freepik as backup
     results = await searchPexelsImages(query, count);
     if (results.length < 3) {
       const freepikResults = await searchFreepikImages(query, count);
@@ -192,7 +185,6 @@ async function searchImages(query: string, count: number = 15, preferFreepik: bo
     }
   }
 
-  // Shuffle results to avoid always picking the same images
   for (let i = results.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [results[i], results[j]] = [results[j], results[i]];
@@ -214,10 +206,8 @@ async function getExternalSources(siteSlug: string, category: string): Promise<s
 
     const sources = site.external_sources;
 
-    // Collect relevant sources: match category + all other categories as fallback
     let relevantSources: Array<{ name: string; url: string }> = [];
 
-    // First: try exact category match
     for (const [cat, links] of Object.entries(sources)) {
       if (category && cat.toLowerCase().includes(category.toLowerCase()) ||
         category && category.toLowerCase().includes(cat.toLowerCase())) {
@@ -225,7 +215,6 @@ async function getExternalSources(siteSlug: string, category: string): Promise<s
       }
     }
 
-    // If no exact match, use all sources
     if (relevantSources.length === 0) {
       for (const links of Object.values(sources)) {
         relevantSources.push(...(links as Array<{ name: string; url: string }>));
@@ -321,7 +310,8 @@ export async function POST(request: NextRequest) {
       }
     }
     const existingArticles = allArticles;
-    console.log(`[內連] siteSlug=${siteSlug}, GitHub抓到=${githubArticles.length}, 合併後=${existingArticles.length}`);
+    console.log(`[內連] siteSlug=${siteSlug}, 抓到=${githubArticles.length}, 合併後=${existingArticles.length}`);
+
     // Generate random names for this article
     const randomNames = getRandomNames(3);
     const siteStyleFn = SITE_PROMPTS[siteSlug] || SITE_PROMPTS.default;
@@ -330,40 +320,31 @@ export async function POST(request: NextRequest) {
     // Fetch external sources from Supabase
     const externalSourcesBlock = await getExternalSources(siteSlug, category);
 
-    // Build internal links instruction
-    let internalLinksBlock = '';
-    console.log(`[內連debug] siteSlug=${siteSlug}, articles=${existingArticles?.length}, first=${existingArticles?.[0]?.title}`);
+    // Pre-compute internal links list (avoid nested template literal issues)
+    let internalLinksForPrompt = '';
     if (existingArticles && existingArticles.length > 0) {
-      const linkList = existingArticles
-        .slice(0, 30) // limit to avoid token overflow
-        .map((a: ExistingArticle) => `- [${a.title}](${a.url})`)
+      const linkLines = existingArticles
+        .slice(0, 20)
+        .map((a: ExistingArticle) => '  - [' + a.title + '](' + a.url + ')')
         .join('\n');
-      internalLinksBlock = `
-
-📌 內部連結（⚠️ 必須使用，不可省略！）：
-以下是本站已有的文章清單，你【必須】在文章中插入至少 2 個內部連結。
-⚠️ 只能使用以下清單中的 URL，絕對不要自己編造連結！用 Markdown 格式 [適當的文字](URL) 融入段落中。
-⚠️ 如果不插入內部連結，這篇文章將不合格！
-
-${linkList}
-
-從上面選擇 2-4 個與本文主題最相關的文章來連結。即使相關性不高，也要選最接近的插入。`;
+      internalLinksForPrompt = '- ⚠️【必須】在正文中插入 2-4 個內部連結！從以下站內文章清單選擇最相關的：\n' + linkLines + '\n  請用 [適當文字](URL) 格式自然融入段落中，絕對不可省略內部連結！';
+      console.log(`[內連] 已建立內連清單，共 ${existingArticles.slice(0, 20).length} 篇`);
     }
 
     // Build external links instruction for prompt
     let externalLinksInstruction = '';
     if (externalSourcesBlock) {
-      externalLinksInstruction = `- 在正文中自然插入 2-4 個外部連結（從上面提供的來源清單中選擇）`;
+      externalLinksInstruction = '- 在正文中自然插入 2-4 個外部連結（從上面提供的來源清單中選擇）';
     } else {
-      externalLinksInstruction = `- 在正文中自然插入 2-4 個外部連結（連到真實的權威網站，如維基百科、政府網站、知名媒體等）`;
+      externalLinksInstruction = '- 在正文中自然插入 2-4 個外部連結（連到真實的權威網站，如維基百科、政府網站、知名媒體等）';
     }
 
-    const systemPrompt = `${siteStyle}
+    const systemPrompt = siteStyle + `
 
 重要 SEO 規範：
 - 文章必須包含 2-4 個外部連結，自然融入內容中
 - 外部連結用 Markdown 格式 [文字](URL)
-- 文章必須有故事性開頭，不要直接說教${externalSourcesBlock}`;
+- 文章必須有故事性開頭，不要直接說教` + externalSourcesBlock;
 
     const prompt = `請撰寫一篇關於「${title}」的文章。
 
@@ -378,11 +359,9 @@ ${linkList}
 5. 實際應用 — 給讀者的行動建議
 6. 結語 — 總結 + 呼籲行動
 
-連結要求：
+連結要求（⚠️ 非常重要，必須遵守！）：
 ${externalLinksInstruction}
-${existingArticles?.length > 0 ? `- ⚠️【必須】在正文中自然插入 2-4 個內部連結，從以下清單選擇：
-${existingArticles.slice(0, 20).map((a: ExistingArticle) => `  [${a.title}](${a.url})`).join('\n')}
-選最相關的 2-4 篇，用 [適當文字](URL) 格式自然融入段落中。` : ''}
+${internalLinksForPrompt}
 
 最後請額外輸出：
 ---DESCRIPTION_START---
@@ -464,7 +443,6 @@ ${existingArticles.slice(0, 20).map((a: ExistingArticle) => `  [${a.title}](${a.
     let content = raw.split('---FAQ_START---')[0].trim();
     content = content.split('---DESCRIPTION_START---')[0].trim();
     content = content.split('---TAGS_START---')[0].trim();
-    // Remove trailing --- if present
     content = content.replace(/\n---\s*$/, '').trim();
 
     // Search images for each position (skip if includeImages is false)
@@ -477,11 +455,9 @@ ${existingArticles.slice(0, 20).map((a: ExistingArticle) => `  [${a.title}](${a.
     await Promise.all(
       positions.map(async (pos) => {
         let query = imageKeywords[pos] || title;
-        // Add "christian" for bible site to avoid Islamic imagery
         if (siteSlug === 'bible' && !query.toLowerCase().includes('christian')) {
           query = `christian ${query}`;
         }
-        // Add "asian" for all Chinese-language sites when people are involved
         if (['bible', 'mommystartup', 'chparenting'].includes(siteSlug) && !query.toLowerCase().includes('asian')) {
           query = `asian ${query}`;
         }
