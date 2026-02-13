@@ -175,7 +175,7 @@ async function searchFreepikImages(query: string, count: number = 10): Promise<A
 // Combined image search: Pexels first, Freepik fallback
 async function searchImages(query: string, count: number = 15, preferFreepik: boolean = false): Promise<Array<{ url: string; thumbnail: string; alt: string; photographer: string }>> {
   let results: Array<{ url: string; thumbnail: string; alt: string; photographer: string }> = [];
-  
+
   if (preferFreepik) {
     // Asian sites: Freepik first, Pexels as backup
     results = await searchFreepikImages(query, count);
@@ -191,13 +191,13 @@ async function searchImages(query: string, count: number = 15, preferFreepik: bo
       results = [...results, ...freepikResults];
     }
   }
-  
+
   // Shuffle results to avoid always picking the same images
   for (let i = results.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [results[i], results[j]] = [results[j], results[i]];
   }
-  
+
   return results;
 }
 
@@ -321,7 +321,7 @@ export async function POST(request: NextRequest) {
       }
     }
     const existingArticles = allArticles;
-
+    console.log(`[內連] siteSlug=${siteSlug}, GitHub抓到=${githubArticles.length}, 合併後=${existingArticles.length}`);
     // Generate random names for this article
     const randomNames = getRandomNames(3);
     const siteStyleFn = SITE_PROMPTS[siteSlug] || SITE_PROMPTS.default;
@@ -332,6 +332,7 @@ export async function POST(request: NextRequest) {
 
     // Build internal links instruction
     let internalLinksBlock = '';
+    console.log(`[內連debug] siteSlug=${siteSlug}, articles=${existingArticles?.length}, first=${existingArticles?.[0]?.title}`);
     if (existingArticles && existingArticles.length > 0) {
       const linkList = existingArticles
         .slice(0, 30) // limit to avoid token overflow
