@@ -223,13 +223,7 @@ async function getExternalSources(siteSlug: string, category: string): Promise<s
       .map((s) => `- ${s.name}: https://${s.url}`)
       .join('\n');
 
-    return `
-
-📌 外部連結來源清單（必須從以下清單中選擇 2-4 個）：
-⚠️ 只能使用以下清單中的網站作為外部連結，不要自己編造！
-${sourceList}
-
-請從上面的清單中選擇 2-4 個與文章主題最相關的網站，用 Markdown 格式 [適當的文字](URL) 自然融入文章中。`;
+    return `\n\n📌 外部連結來源清單（必須從以下清單中選擇 2-4 個）：\n⚠️ 只能使用以下清單中的網站作為外部連結，不要自己編造！\n${sourceList}\n\n請從上面的清單中選擇 2-4 個與文章主題最相關的網站，用 Markdown 格式 [適當的文字](URL) 自然融入文章中。`;
   } catch {
     return '';
   }
@@ -285,43 +279,109 @@ async function getExistingArticles(siteSlug: string): Promise<ExistingArticle[]>
   }
 }
 
-// Second GPT call: pick relevant articles and insert links into content
+// Second GPT call: pick 3 relevant articles, then programmatically insert links
 async function insertInternalLinks(content: string, articles: ExistingArticle[]): Promise<string> {
   if (!articles || articles.length === 0) return content;
 
   try {
-    const articleList = articles
-      .slice(0, 20)
-      .map((a, i) => (i + 1) + '. ' + a.title + ' → ' + a.url)
-      .join('\n');
+    // Build numbered article list
+    const articleList = articles.slice(0, 20).map((a, i) => {
+      return (i + 1) + '. ' + a.title + ' | ' + a.url;
+    }).join('\n');
 
-    const linkPrompt = '以下是一篇已完成的文章（前3000字）：\n\n' + content.slice(0, 3000) + '\n\n---\n\n以下是站內其他文章清單：\n' + articleList + '\n\n請從清單中選出 3 篇與本文最相關的文章，並指定要在文章中的哪個「原文片段」插入連結。\n\n回傳格式（純 JSON，不要加 markdown 標記）：\n[{"original":"文章中的一段原文（10-20字，必須完全一致）","replacement":"把原文中某幾個字替換成 [連結文字](URL) 的版本"}]\n\n規則：\n- original 必須是文章中「真實存在」的文字片段，完全一致才能替換成功\n- replacement 只是把 original 中的某幾個字加上 Markdown 連結，其餘文字不變\n- 不要改變原文意思\n- 選擇 3 篇最相關的文章\n- 只回傳 JSON 陣列，不要其他文字';
+    // Ask GPT to pick 3 relevant articles and suggest anchor keywords
+    const pickPrompt = [
+      '你是一個內部連結助手。以下是一篇文章的摘要：',
+      '',
+      content.slice(0, 800),
+      '',
+      '以下是站內文章清單：',
+      articleList,
+      '',
+      '任務：選出 3 篇與本文最相關的文章。對每篇文章，提供一個在本文中一定存在的中文詞（2-6個字）作為錨點文字。',
+      '',
+      '回傳純 JSON（不要加 ```）：',
+      '[{"index":1,"anchor":"詞語"},{"index":5,"anchor":"詞語"},{"index":12,"anchor":"詞語"}]',
+      '',
+      '重要：anchor 必須是本文中確實出現的詞，2-6個中文字，不要太長。',
+    ].join('\n');
 
-    const linkCompletion = await openai.chat.completions.create({
+    const pickResult = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
-      messages: [
-        { role: 'user', content: linkPrompt },
-      ],
-      temperature: 0.3,
-      max_tokens: 1000,
+      messages: [{ role: 'user', content: pickPrompt }],
+      temperature: 0.2,
+      max_tokens: 200,
     });
 
-    const linkRaw = linkCompletion.choices[0].message.content || '';
-    const cleaned = linkRaw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const replacements = JSON.parse(cleaned) as Array<{ original: string; replacement: string }>;
+    const pickRaw = pickResult.choices[0].message.content || '';
+    const cleaned = pickRaw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    console.log('[內連debug] GPT選擇結果: ' + cleaned);
 
+    const picks = JSON.parse(cleaned) as Array<{ index: number; anchor: string }>;
+
+    // Programmatically insert links
     let result = content;
     let insertedCount = 0;
-    for (const r of replacements) {
-      if (r.original && r.replacement && result.includes(r.original)) {
-        result = result.replace(r.original, r.replacement);
-        insertedCount++;
+    const usedAnchors = new Set<string>();
+
+    for (const pick of picks) {
+      if (insertedCount >= 3) break;
+
+      const article = articles[pick.index - 1];
+      if (!article) {
+        console.log('[內連debug] index ' + pick.index + ' 超出範圍');
+        continue;
       }
+
+      let anchor = pick.anchor.trim();
+      if (!anchor || anchor.length < 2 || usedAnchors.has(anchor)) {
+        console.log('[內連debug] anchor 無效或重複: ' + anchor);
+        continue;
+      }
+
+      // Search for anchor in content
+      const pos = result.indexOf(anchor);
+      console.log('[內連debug] 搜尋 "' + anchor + '" → pos=' + pos + ', 文章=' + article.title);
+
+      if (pos === -1) {
+        // Try shorter version (first 2 chars)
+        const shortAnchor = anchor.slice(0, 2);
+        const shortPos = result.indexOf(shortAnchor);
+        if (shortPos === -1) {
+          console.log('[內連debug] 短版 "' + shortAnchor + '" 也找不到，跳過');
+          continue;
+        }
+        anchor = shortAnchor;
+      }
+
+      // Re-find position after possible anchor change
+      const finalPos = result.indexOf(anchor);
+      if (finalPos === -1) continue;
+
+      // Make sure it's not already inside a link [...] or (...)
+      const contextBefore = result.slice(Math.max(0, finalPos - 20), finalPos);
+      const contextAfter = result.slice(finalPos + anchor.length, finalPos + anchor.length + 5);
+      if (contextBefore.includes('[') && !contextBefore.includes(']')) continue;
+      if (contextAfter.includes('](')) continue;
+      if (contextBefore.includes('](')) continue;
+
+      // Make sure it's in a paragraph (not heading)
+      const lineStart = result.lastIndexOf('\n', finalPos);
+      const lineContent = result.slice(lineStart + 1, finalPos);
+      if (lineContent.trimStart().startsWith('#')) continue;
+
+      // Insert link
+      const link = '[' + anchor + '](' + article.url + ')';
+      result = result.slice(0, finalPos) + link + result.slice(finalPos + anchor.length);
+      usedAnchors.add(anchor);
+      insertedCount++;
+      console.log('[內連] ✅ 插入: ' + anchor + ' → ' + article.title);
     }
-    console.log('[內連] 精準插入完成，成功 ' + insertedCount + '/' + replacements.length + ' 個');
+
+    console.log('[內連] 完成，成功 ' + insertedCount + '/' + picks.length);
     return result;
   } catch (err) {
-    console.log('[內連] 插入失敗，跳過：' + (err as Error).message);
+    console.log('[內連] 失敗: ' + (err as Error).message);
     return content;
   }
 }
@@ -342,13 +402,14 @@ export async function POST(request: NextRequest) {
       }
     }
     const existingArticles = allArticles;
-    console.log('[內連] siteSlug=' + siteSlug + ', 抓到=' + githubArticles.length + ', 合併後=' + existingArticles.length);
+    console.log('[內連] siteSlug=' + siteSlug + ', 文章數=' + existingArticles.length);
 
     const randomNames = getRandomNames(3);
     const siteStyleFn = SITE_PROMPTS[siteSlug] || SITE_PROMPTS.default;
     const siteStyle = siteStyleFn(randomNames);
 
     const externalSourcesBlock = await getExternalSources(siteSlug, category);
+    console.log('[外連] externalSourcesBlock長度=' + externalSourcesBlock.length);
 
     let externalLinksInstruction = '';
     if (externalSourcesBlock) {
@@ -357,9 +418,57 @@ export async function POST(request: NextRequest) {
       externalLinksInstruction = '- 在正文中自然插入 2-4 個外部連結（連到真實的權威網站，如維基百科、政府網站、知名媒體等）';
     }
 
-    const systemPrompt = siteStyle + '\n\n重要 SEO 規範：\n- 文章必須包含 2-4 個外部連結，自然融入內容中\n- 外部連結用 Markdown 格式 [文字](URL)\n- 文章必須有故事性開頭，不要直接說教' + externalSourcesBlock;
+    // System prompt: site style + SEO rules + external sources
+    const systemPrompt = `${siteStyle}
 
-    const prompt = '請撰寫一篇關於「' + title + '」的文章。\n\n分類：' + category + '\n字數要求：' + (length || '2000-2500字') + '\n\n文章結構要求：\n1. 標題（# 格式，使用原標題）\n2. 故事性開頭 — 用一個具體的小故事或生活情境帶入（100-150字）\n3. 直接回答 — 簡要回答核心問題（50-80字）\n4. 3-5 個重點段落（## 格式），每段 200-350 字\n5. 實際應用 — 給讀者的行動建議\n6. 結語 — 總結 + 呼籲行動\n\n連結要求：\n' + externalLinksInstruction + '\n\n最後請額外輸出：\n---DESCRIPTION_START---\n用30-50字寫一段吸引人的文章摘要，讓人看了想點進來，不要只重複標題\n---DESCRIPTION_END---\n\n---TAGS_START---\n["標籤1", "標籤2", "標籤3"]\n---TAGS_END---\n\n---FAQ_START---\n[\n  {"q": "問題1", "a": "回答1（50-80字）"},\n  {"q": "問題2", "a": "回答2（50-80字）"},\n  {"q": "問題3", "a": "回答3（50-80字）"}\n]\n---FAQ_END---\n\n---IMAGE_KEYWORDS_START---\n{"cover": "封面圖搜尋關鍵字（英文）"}\n---IMAGE_KEYWORDS_END---\n\n注意：IMAGE_KEYWORDS 的值請用英文關鍵字。\n- 如果圖片需要有人物，請加上 "asian" 關鍵字（例如 "asian mother cooking" 而不是 "mother cooking"）\n- 如果是基督教/聖經相關主題，所有關鍵字都要加上 "christian"（例如 "christian prayer"、"christian church worship"、"christian bible reading"），避免搜到其他宗教的圖片\n\n先輸出完整 Markdown 文章，再輸出 FAQ 和 IMAGE_KEYWORDS。';
+重要 SEO 規範：
+- 文章必須包含 2-4 個外部連結，自然融入內容中
+- 外部連結用 Markdown 格式 [文字](URL)
+- 文章必須有故事性開頭，不要直接說教${externalSourcesBlock}`;
+
+    // User prompt: article request
+    const prompt = `請撰寫一篇關於「${title}」的文章。
+
+分類：${category}
+字數要求：${length || '2000-2500字'}
+
+文章結構要求：
+1. 標題（# 格式，使用原標題）
+2. 故事性開頭 — 用一個具體的小故事或生活情境帶入（100-150字）
+3. 直接回答 — 簡要回答核心問題（50-80字）
+4. 3-5 個重點段落（## 格式），每段 200-350 字
+5. 實際應用 — 給讀者的行動建議
+6. 結語 — 總結 + 呼籲行動
+
+連結要求：
+${externalLinksInstruction}
+
+最後請額外輸出：
+---DESCRIPTION_START---
+用30-50字寫一段吸引人的文章摘要，讓人看了想點進來，不要只重複標題
+---DESCRIPTION_END---
+
+---TAGS_START---
+["標籤1", "標籤2", "標籤3"]
+---TAGS_END---
+
+---FAQ_START---
+[
+  {"q": "問題1", "a": "回答1（50-80字）"},
+  {"q": "問題2", "a": "回答2（50-80字）"},
+  {"q": "問題3", "a": "回答3（50-80字）"}
+]
+---FAQ_END---
+
+---IMAGE_KEYWORDS_START---
+{"cover": "封面圖搜尋關鍵字（英文）"}
+---IMAGE_KEYWORDS_END---
+
+注意：IMAGE_KEYWORDS 的值請用英文關鍵字。
+- 如果圖片需要有人物，請加上 "asian" 關鍵字（例如 "asian mother cooking" 而不是 "mother cooking"）
+- 如果是基督教/聖經相關主題，所有關鍵字都要加上 "christian"（例如 "christian prayer"、"christian church worship"、"christian bible reading"），避免搜到其他宗教的圖片
+
+先輸出完整 Markdown 文章，再輸出 FAQ 和 IMAGE_KEYWORDS。`;
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -432,10 +541,10 @@ export async function POST(request: NextRequest) {
       positions.map(async (pos) => {
         let query = imageKeywords[pos] || title;
         if (siteSlug === 'bible' && !query.toLowerCase().includes('christian')) {
-          query = 'christian ' + query;
+          query = `christian ${query}`;
         }
         if (['bible', 'mommystartup', 'chparenting'].includes(siteSlug) && !query.toLowerCase().includes('asian')) {
-          query = 'asian ' + query;
+          query = `asian ${query}`;
         }
         const preferFreepik = ['bible', 'mommystartup', 'chparenting'].includes(siteSlug);
         const candidates = await searchImages(query, 15, preferFreepik);
