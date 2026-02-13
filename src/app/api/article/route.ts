@@ -339,13 +339,29 @@ export async function POST(request: NextRequest) {
       externalLinksInstruction = '- 在正文中自然插入 2-4 個外部連結（連到真實的權威網站，如維基百科、政府網站、知名媒體等）';
     }
 
+    // Build internal links block for system prompt
+    let internalSourcesBlock = '';
+    if (existingArticles && existingArticles.length > 0) {
+      const linkLines = existingArticles
+        .slice(0, 20)
+        .map((a: ExistingArticle) => '- [' + a.title + '](' + a.url + ')')
+        .join('\n');
+      internalSourcesBlock = `
+
+📌 內部連結來源清單（必須從以下清單中選擇 2-4 個）：
+⚠️ 只能使用以下清單中的站內文章作為內部連結，不要自己編造！
+${linkLines}
+
+請從上面的清單中選擇 2-4 個與文章主題最相關的站內文章，用 Markdown 格式 [適當的文字](URL) 自然融入文章中。`;
+    }
+
     const systemPrompt = siteStyle + `
 
 重要 SEO 規範：
 - 文章必須包含 2-4 個外部連結，自然融入內容中
-- 外部連結用 Markdown 格式 [文字](URL)
-- 文章必須有故事性開頭，不要直接說教` + externalSourcesBlock;
-
+- 文章必須包含 2-4 個內部連結（站內文章），自然融入內容中
+- 所有連結用 Markdown 格式 [文字](URL)
+- 文章必須有故事性開頭，不要直接說教` + externalSourcesBlock + internalSourcesBlock;
     const prompt = `請撰寫一篇關於「${title}」的文章。
 
 分類：${category}
