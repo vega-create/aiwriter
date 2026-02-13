@@ -381,7 +381,7 @@ ${linkList}
 連結要求：
 ${externalLinksInstruction}
 ${existingArticles?.length > 0 ? `- ⚠️【必須】在正文中自然插入 2-4 個內部連結，從以下清單選擇：
-${existingArticles.slice(0, 20).map((a: ExistingArticle) => `  [${a.title}](${a.url})`).join('\\n')}
+${existingArticles.slice(0, 20).map((a: ExistingArticle) => `  [${a.title}](${a.url})`).join('\n')}
 選最相關的 2-4 篇，用 [適當文字](URL) 格式自然融入段落中。` : ''}
 
 最後請額外輸出：
