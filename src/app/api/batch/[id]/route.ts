@@ -17,3 +17,21 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
+
+export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const user = await getAuthUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const { data: batch } = await supabase.from('aw_batches')
+      .select('id').eq('id', params.id).eq('user_id', user.id).single();
+    if (!batch) return NextResponse.json({ error: 'Batch not found' }, { status: 404 });
+    const body = await request.json();
+    const updates: any = {};
+    if (body.status) updates.status = body.status;
+    const { error } = await supabase.from('aw_batches').update(updates).eq('id', params.id);
+    if (error) throw error;
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
