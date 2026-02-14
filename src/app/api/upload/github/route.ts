@@ -25,7 +25,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'GitHub not configured for this site' }, { status: 400 });
     }
 
-    const filePath = `${site.github_path || 'src/content/posts/'}${filename}`;
+   const basePath = site.github_path || 'src/content/posts';
+   const filePath = `${basePath.replace(/\/$/, '')}/${filename}`;
     const apiUrl = `https://api.github.com/repos/${site.github_repo}/contents/${filePath}`;
 
     // 檢查檔案是否已存在（取得 sha）
